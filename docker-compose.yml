@@ -1,0 +1,14 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: marketplace-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Local-mode uploads persist on the host even if the container is
+      # recreated. Not needed if you've switched UPLOAD_MODE=s3.
+      - ./backend/uploads:/app/uploads
