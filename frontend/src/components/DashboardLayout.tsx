@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Menu, Bell, Search } from "lucide-react";
+import { Bell, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import Sidebar from "./Sidebar";
+import { AppSidebar } from "./Sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -11,32 +13,19 @@ interface DashboardLayoutProps {
 }
 
 export default function DashboardLayout({ children, role, title }: DashboardLayoutProps) {
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const { user } = useAuth();
 
-  const sidebarWidth = "lg:ml-64";
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Sidebar
-        role={role}
-        mobileOpen={mobileSidebarOpen}
-        onMobileClose={() => setMobileSidebarOpen(false)}
-      />
-
-      {/* Main Content Area */}
-      <div className={`${sidebarWidth} transition-all duration-300`}>
+    <SidebarProvider>
+      <AppSidebar role={role} />
+      <SidebarInset className="bg-slate-50">
         {/* Top Bar */}
         <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-100">
           <div className="flex items-center justify-between h-16 px-4 lg:px-8">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setMobileSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="h-4" />
               <h1 className="text-lg font-semibold text-slate-800">{title}</h1>
             </div>
 
@@ -110,7 +99,7 @@ export default function DashboardLayout({ children, role, title }: DashboardLayo
             {children}
           </div>
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

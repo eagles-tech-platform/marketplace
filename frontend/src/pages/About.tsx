@@ -45,7 +45,7 @@ export default function About() {
         <div className="absolute inset-0 bg-[url('/hero-main.jpg')] bg-cover bg-center opacity-10" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-4xl lg:text-5xl font-bold text-white mb-6">
-            About MarketPlace
+            About The MarketPlace
           </h1>
           <p className="text-lg text-white/80 max-w-2xl mx-auto">
             We're on a mission to connect every household and business in Nigeria with skilled,
@@ -68,12 +68,12 @@ export default function About() {
             <div className="space-y-6">
               <h2 className="text-3xl font-bold text-slate-800">Our Story</h2>
               <p className="text-slate-600 leading-relaxed">
-                MarketPlace was born from a simple observation: finding reliable service providers in Nigeria
+                Quantum MarketPlace was born from a simple observation: finding reliable service providers in Nigeria
                 was unnecessarily difficult. Whether you needed a plumber at midnight or an electrician for
                 a new installation, the process was frustrating and often led to subpar results.
               </p>
               <p className="text-slate-600 leading-relaxed">
-                We built MarketPlace to solve this problem. Our platform brings together verified,
+                We built the MarketPlace to solve this problem. Our platform brings together verified,
                 skilled professionals from every trade imaginable — from construction workers to beauty
                 therapists, from automotive technicians to event planners.
               </p>

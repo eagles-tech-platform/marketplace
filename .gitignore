@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+*.local
+.codex/
+.claude/
+apk-builds/
+android-builds/
+.zip
+WORK_IN_PROGRESS.md

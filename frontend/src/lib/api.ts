@@ -1,7 +1,7 @@
 // Minimal fetch wrapper for the new Express/MongoDB backend.
 // Cookies (httpOnly JWT) are sent automatically via `credentials: "include"`.
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+export const API_BASE_URL =   `${import.meta.env.VITE_API_URL ?? 'http://localhost:5001'}/api`;
 
 /**
  * Builds a query string, safely dropping undefined/null/empty values.

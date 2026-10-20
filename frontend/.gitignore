@@ -2,3 +2,7 @@ node_modules
 dist
 .env
 *.local
+../.codex/
+../.claude/
+*/apk-builds/
+android-builds/

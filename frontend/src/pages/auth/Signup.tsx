@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { jobCategories } from "@/data/categories";
 import { nigerianStates, internationalCountries } from "@/data/locations";
 import { authApi, ApiError } from "@/lib/api";
+import LegalConsent from "@/components/legal/LegalConsent";
 
 type Role = "customer" | "provider" | null;
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -23,6 +24,7 @@ export default function Signup() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -83,7 +85,7 @@ export default function Signup() {
   const canProceed = () => {
     switch (step) {
       case 1: return !!role;
-      case 2: return fullName && email && phone && password && confirmPassword && password === confirmPassword && password.length >= 8;
+      case 2: return fullName && email && phone && password && confirmPassword && password === confirmPassword && password.length >= 8 && agreed;
       case 3: return state && city && (role === "provider" ? selectedCategory && selectedNiche && experience : true);
       case 4: return !!paymentMethod;
       default: return true;
@@ -97,10 +99,13 @@ export default function Signup() {
         <div className="absolute inset-0 bg-[url('/hero-main.jpg')] bg-cover bg-center opacity-15" />
         <div className="relative flex flex-col justify-center p-12 text-white">
           <Link to="/" className="flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-            <span className="text-white font-sans font-bold text-xl">Qm</span>
+            <div className="flex items-center justify-center">
+              <img src="/logo.png" alt="quantum marketplace" className="w-14 h-14 rounded-2xl item-contain" />
             </div>
-            <span className="text-2xl font-bold">MarketPlace</span>
+            <div className="flex flex-col items-start">
+              <span className="text-sm font-bold  text-slate-600">QUANTUM</span>
+              <span className="text-2xl font-bold">MarketPlace</span>
+            </div>
           </Link>
           <h2 className="text-3xl font-bold mb-4">
             {step === 1 && "Choose Your Path"}
@@ -142,7 +147,7 @@ export default function Signup() {
                 <img src="/logo.png" alt="Logo" className="w-10 h-10 rounded-lg" />
               </div>
               <div className="flex flex-col items-start">
-                <span className="text-sm font-light  text-slate-600">QUANTUM</span>
+                <span className="text-sm font-bold  text-slate-600">QUANTUM</span>
                 <span className="text-2xl font-bold text-slate-800">MarketPlace</span>
               </div>
             </Link>
@@ -168,8 +173,8 @@ export default function Signup() {
                 <button
                   onClick={() => setRole("customer")}
                   className={`w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 ${role === "customer"
-                      ? "border-teal-500 bg-teal-50 shadow-md"
-                      : "border-slate-200 hover:border-teal-300 hover:bg-slate-50"
+                    ? "border-teal-500 bg-teal-50 shadow-md"
+                    : "border-slate-200 hover:border-teal-300 hover:bg-slate-50"
                     }`}
                 >
                   <div className="flex items-start gap-4">
@@ -187,8 +192,8 @@ export default function Signup() {
                 <button
                   onClick={() => setRole("provider")}
                   className={`w-full p-5 rounded-2xl border-2 text-left transition-all duration-200 ${role === "provider"
-                      ? "border-orange-500 bg-orange-50 shadow-md"
-                      : "border-slate-200 hover:border-orange-300 hover:bg-slate-50"
+                    ? "border-orange-500 bg-orange-50 shadow-md"
+                    : "border-slate-200 hover:border-orange-300 hover:bg-slate-50"
                     }`}
                 >
                   <div className="flex items-start gap-4">
@@ -237,6 +242,7 @@ export default function Signup() {
                     <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat password" className="h-11 rounded-xl" required />
                     {confirmPassword && password !== confirmPassword && <p className="text-xs text-red-500 mt-1">Passwords do not match</p>}
                   </div>
+                  <LegalConsent checked={agreed} onChange={setAgreed} />
                 </div>
               </div>
             )}
@@ -349,8 +355,8 @@ export default function Signup() {
                       key={method.id}
                       onClick={() => setPaymentMethod(method.id)}
                       className={`w-full p-4 rounded-xl border-2 text-left transition-all ${paymentMethod === method.id
-                          ? "border-teal-500 bg-teal-50"
-                          : "border-slate-200 hover:border-slate-300"
+                        ? "border-teal-500 bg-teal-50"
+                        : "border-slate-200 hover:border-slate-300"
                         }`}
                     >
                       <p className="font-medium text-slate-800">{method.name}</p>

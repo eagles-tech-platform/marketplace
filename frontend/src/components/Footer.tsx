@@ -121,13 +121,13 @@ export default function Footer() {
             </span>
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <Link to="/" className="text-slate-400 hover:text-teal-400 transition-colors">
+            <Link to="/terms" className="text-slate-400 hover:text-teal-400 transition-colors">
               Terms
             </Link>
-            <Link to="/" className="text-slate-400 hover:text-teal-400 transition-colors">
+            <Link to="/privacy" className="text-slate-400 hover:text-teal-400 transition-colors">
               Privacy
             </Link>
-            <Link to="/" className="text-slate-400 hover:text-teal-400 transition-colors">
+            <Link to="/cookies" className="text-slate-400 hover:text-teal-400 transition-colors">
               Cookies
             </Link>
           </div>
@@ -135,7 +135,7 @@ export default function Footer() {
 
         {/* Bottom Bar */}
         <div className="border-t border-slate-800 py-5 text-center text-sm text-slate-500">
-          &copy; {new Date().getFullYear()} MarketPlace. All rights reserved.
+          &copy; {new Date().getFullYear()} Quantum MarketPlace. All rights reserved.
         </div>
       </div>
     </footer>

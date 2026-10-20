@@ -1,6 +1,12 @@
 import { Routes, Route } from "react-router";
 import { Toaster } from "@/components/ui/sonner";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { Capacitor } from "@capacitor/core";
+import NativeEntry from "@/components/NativeEntry";
+
+import NativeGate from "./components/NativeGate";
+import CookieNotice from "./components/CookieNotice";
+import { TermsPage, PrivacyPage, CookiesPage } from "./pages/legal/LegalPages";
 
 // Public Pages
 import Home from "./pages/Home";
@@ -49,68 +55,79 @@ import AdminFeedback from "./pages/admin/AdminFeedback";
 
 // Shared
 import NotFound from "./pages/NotFound";
-import Navbar from "./components/Navbar";
+import LandingLayout from "./components/LandingLayout";
 
 export default function App() {
+  const isNative = Capacitor.isNativePlatform();
+
   return (
     <>
-    <Navbar />
       <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/services" element={<Services />} />
-        <Route path="/services/:id" element={<ServiceDetail />} />
-        <Route path="/blog" element={<Blog />} />
-        <Route path="/blog/:id" element={<BlogPost />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route element={<NativeGate />}>
+          <Route element={<LandingLayout />}>
+            <Route path="/" element={isNative ? <NativeEntry /> : <Home />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/services/:id" element={<ServiceDetail />} />
+            <Route path="/blog" element={<Blog />} />
+            <Route path="/blog/:id" element={<BlogPost />} />
+          </Route>
 
-        {/* Customer Dashboard Routes — server-verified session + role required */}
-        <Route element={<ProtectedRoute allow={["customer"]} />}>
-          <Route path="/dashboard" element={<CustomerDashboard />} />
-          <Route path="/dashboard/bookings" element={<CustomerBookings />} />
-          <Route path="/dashboard/recommendations" element={<CustomerRecommendations />} />
-          <Route path="/dashboard/services" element={<CustomerServices />} />
-          <Route path="/dashboard/chat" element={<CustomerChat />} />
-          <Route path="/dashboard/cart" element={<CustomerCart />} />
-          <Route path="/dashboard/settings" element={<CustomerSettings />} />
-          <Route path="/dashboard/blog" element={<CustomerBlog />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          
+          {/* Customer Dashboard Routes — server-verified session + role required */}
+          <Route element={<ProtectedRoute allow={["customer"]} />}>
+            <Route path="/dashboard" element={<CustomerDashboard />} />
+            <Route path="/dashboard/bookings" element={<CustomerBookings />} />
+            <Route path="/dashboard/recommendations" element={<CustomerRecommendations />} />
+            <Route path="/dashboard/services" element={<CustomerServices />} />
+            <Route path="/dashboard/chat" element={<CustomerChat />} />
+            <Route path="/dashboard/cart" element={<CustomerCart />} />
+            <Route path="/dashboard/settings" element={<CustomerSettings />} />
+            <Route path="/dashboard/blog" element={<CustomerBlog />} />
+          </Route>
+
+          {/* Provider Dashboard Routes */}
+          <Route element={<ProtectedRoute allow={["provider"]} />}>
+            <Route path="/provider" element={<ProviderDashboard />} />
+            <Route path="/provider/services" element={<ProviderServices />} />
+            <Route path="/provider/bookings" element={<ProviderBookings />} />
+            <Route path="/provider/chat" element={<ProviderChat />} />
+            <Route path="/provider/earnings" element={<ProviderEarnings />} />
+            <Route path="/provider/settings" element={<ProviderSettings />} />
+            <Route path="/provider/blog" element={<ProviderBlog />} />
+          </Route>
+
+          {/* Admin Dashboard Routes */}
+          <Route element={<ProtectedRoute allow={["admin"]} />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/reviews" element={<AdminReviews />} />
+            <Route path="/admin/security" element={<AdminSecurity />} />
+            <Route path="/admin/withdrawals" element={<AdminWithdrawals />} />
+            <Route path="/admin/approvals" element={<AdminApprovals />} />
+            <Route path="/admin/verifications" element={<AdminVerifications />} />
+            <Route path="/admin/bookings" element={<AdminBookings />} />
+            <Route path="/admin/payments" element={<AdminPayments />} />
+            <Route path="/admin/notifications" element={<AdminNotifications />} />
+            <Route path="/admin/blog" element={<AdminBlog />} />
+            <Route path="/admin/feedback" element={<AdminFeedback />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
+          </Route>
+
+          {/* 404 */}
+          <Route path="*" element={<NotFound />} />
+
+          {/* Legal */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/cookies" element={<CookiesPage />} />
         </Route>
-
-        {/* Provider Dashboard Routes */}
-        <Route element={<ProtectedRoute allow={["provider"]} />}>
-          <Route path="/provider" element={<ProviderDashboard />} />
-          <Route path="/provider/services" element={<ProviderServices />} />
-          <Route path="/provider/bookings" element={<ProviderBookings />} />
-          <Route path="/provider/chat" element={<ProviderChat />} />
-          <Route path="/provider/earnings" element={<ProviderEarnings />} />
-          <Route path="/provider/settings" element={<ProviderSettings />} />
-          <Route path="/provider/blog" element={<ProviderBlog />} />
-        </Route>
-
-        {/* Admin Dashboard Routes */}
-        <Route element={<ProtectedRoute allow={["admin"]} />}>
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/reviews" element={<AdminReviews />} />
-          <Route path="/admin/security" element={<AdminSecurity />} />
-          <Route path="/admin/withdrawals" element={<AdminWithdrawals />} />
-          <Route path="/admin/approvals" element={<AdminApprovals />} />
-          <Route path="/admin/verifications" element={<AdminVerifications />} />
-          <Route path="/admin/bookings" element={<AdminBookings />} />
-          <Route path="/admin/payments" element={<AdminPayments />} />
-          <Route path="/admin/notifications" element={<AdminNotifications />} />
-          <Route path="/admin/blog" element={<AdminBlog />} />
-          <Route path="/admin/feedback" element={<AdminFeedback />} />
-          <Route path="/admin/settings" element={<AdminSettings />} />
-        </Route>
-
-        {/* 404 */}
-        <Route path="*" element={<NotFound />} />
       </Routes>
       <Toaster position="top-right" />
+      <CookieNotice />
     </>
   );
 }

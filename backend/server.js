@@ -19,7 +19,7 @@ initSocket(httpServer);
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "",
     credentials: true,
   })
 );
@@ -67,5 +67,5 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Internal server error." });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 httpServer.listen(PORT, () => console.log(`[server] MARKET PLACE backend (HTTP + Socket.io) running on port ${PORT}`));

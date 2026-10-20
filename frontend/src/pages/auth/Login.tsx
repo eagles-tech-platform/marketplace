@@ -80,8 +80,8 @@ export default function Login() {
       <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-teal-500 via-teal-600 to-orange-500">
         <div className="absolute inset-0 bg-[url('/hero-main.jpg')] bg-cover bg-center opacity-20" />
         <div className="relative flex flex-col justify-center items-center text-white p-12 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mb-6">
-            <span className="text-white font-sans font-bold text-3xl">Qm</span>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6">
+            <img src="/logo.png" alt="Quantum MarketPlace" className="w-16 h-16 object-contain rounded-2xl" />
           </div>
           <h2 className="text-3xl font-bold mb-4">Welcome Back!</h2>
           <p className="text-white/80 max-w-sm">
@@ -215,6 +215,14 @@ export default function Login() {
               </>
             )}
           </div>
+
+          {/* Legal */}
+          <p className="mt-6 text-center text-xs text-slate-500">
+            By signing in you agree to our{" "}
+            <Link to="/terms" className="underline hover:text-slate-700">Terms of Service</Link>,{" "}
+            <Link to="/privacy" className="underline hover:text-slate-700">Privacy Policy</Link> and{" "}
+            <Link to="/cookies" className="underline hover:text-slate-700">Cookie Policy</Link>.
+          </p>
         </div>
       </div>
     </div>
