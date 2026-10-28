@@ -18,9 +18,9 @@ import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
-import ForgotPassword from "@/pages/auth/ForgotPassword";
-import ResetPassword from "@/pages/auth/ResetPassword";
-import VerifyEmail from "@/pages/auth/VerifyEmail";
+import ForgotPassword from "@/pages/auth/Forgotpassword";
+import ResetPassword from "@/pages/auth/Resetpassword";
+import VerifyEmail from "@/pages/auth/Verifyemail";
 
 // Dashboard Pages
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard";
