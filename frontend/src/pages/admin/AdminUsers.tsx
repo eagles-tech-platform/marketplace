@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Search, UserCheck, UserX } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError, type AuthUser } from "@/lib/api";
 
 const roleStyles: Record<string, string> = {

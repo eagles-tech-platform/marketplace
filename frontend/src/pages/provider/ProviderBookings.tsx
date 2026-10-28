@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ClipboardList, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { bookingApi, ApiError, type BookingItem, type BookingStatus } from "@/lib/api";
 
 const tabs: { label: string; value: BookingStatus | "All" }[] = [

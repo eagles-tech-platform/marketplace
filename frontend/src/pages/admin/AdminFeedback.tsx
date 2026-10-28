@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, Mail, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { feedbackApi, ApiError, type FeedbackItem } from "@/lib/api";
 
 const statusConfig: Record<string, { class: string }> = {

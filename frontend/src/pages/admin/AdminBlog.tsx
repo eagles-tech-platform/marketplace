@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, XCircle, Heart, MessageCircle, Trash2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
-import ImageUploader from "@/components/ImageUploader";
+import DashboardLayout from "@/components/auth/DashboardLayout";
+import ImageUploader from "@/components/auth/ImageUploader";
 import { postApi, ApiError, type PostItem } from "@/lib/api";
 
 const statusStyles: Record<string, string> = {

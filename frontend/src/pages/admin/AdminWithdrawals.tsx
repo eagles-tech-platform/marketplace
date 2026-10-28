@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, XCircle, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { paymentApi, ApiError, type WithdrawalItem } from "@/lib/api";
 
 export default function AdminWithdrawals() {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BadgeCheck, Clock, CheckCircle2, XCircle, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { verificationApi, ApiError, type VerificationRequestItem } from "@/lib/api";
 
 export default function AdminVerifications() {

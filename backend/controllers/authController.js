@@ -456,6 +456,66 @@ async function updateAvatar(req, res) {
   }
 }
 
+// PATCH /api/auth/update-profile  (requires auth)
+async function updateProfile(req, res) {
+  try {
+    const { name, phoneNumber, state, city, category, niche, yearsOfExperience } = req.body;
+    const user = req.user;
+
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "Name cannot be empty." });
+      }
+      user.name = name.trim();
+    }
+
+    if (phoneNumber !== undefined) {
+      const phone = String(phoneNumber).trim();
+      // Allows +234..., 080..., with optional spaces/dashes; 7-15 digits
+      if (phone && !/^\+?[\d\s-]{7,15}$/.test(phone)) {
+        return res.status(400).json({ message: "Please enter a valid phone number." });
+      }
+      user.phoneNumber = phone;
+    }
+
+    if (state !== undefined) user.state = String(state).trim();
+    if (city !== undefined) user.city = String(city).trim();
+
+    // Provider-only fields
+    const touchingProviderFields =
+      category !== undefined || niche !== undefined || yearsOfExperience !== undefined;
+
+    if (touchingProviderFields) {
+      if (!user.canBeProvider) {
+        return res.status(403).json({
+          message: "Only service providers can update category, niche or experience.",
+        });
+      }
+      if (category !== undefined) {
+        if (!category) return res.status(400).json({ message: "Category cannot be empty." });
+        user.category = category;
+      }
+      if (niche !== undefined) {
+        if (!niche) return res.status(400).json({ message: "Niche cannot be empty." });
+        user.niche = niche;
+      }
+      if (yearsOfExperience !== undefined) {
+        const years = Number(yearsOfExperience);
+        if (!Number.isFinite(years) || years < 0 || years > 70) {
+          return res.status(400).json({ message: "Years of experience must be a valid number." });
+        }
+        user.yearsOfExperience = years;
+      }
+    }
+
+    await user.save();
+    return res.json({ message: "Profile updated.", user: user.toSafeJSON() });
+  } catch (err) {
+    console.error("[auth] updateProfile error:", err);
+    return res.status(500).json({ message: "Could not update profile." });
+  }
+}
+
 module.exports = {
   register,
   verifyEmail,
@@ -472,4 +532,5 @@ module.exports = {
   changePassword,
   getSessions,
   revokeSession,
+  updateProfile,
 };

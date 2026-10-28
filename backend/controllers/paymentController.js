@@ -17,9 +17,9 @@ function generateReference(prefix) {
 // Fixed prices for the non-booking purposes. Move these to env/config the
 // moment you know the real amounts — placeholders for now.
 const FIXED_AMOUNTS = {
-  provider_slot: Number(process.env.PROVIDER_SLOT_FEE_NGN || 5000),
-  recommendation_fee: Number(process.env.RECOMMENDATION_FEE_NGN || 1000),
-  verification_badge: Number(process.env.VERIFICATION_BADGE_FEE_NGN || 3000),
+  provider_slot: Number(process.env.PROVIDER_SLOT_FEE_NGN),
+  recommendation_fee: Number(process.env.RECOMMENDATION_FEE_NGN),
+  verification_badge: Number(process.env.VERIFICATION_BADGE_FEE_NGN),
 };
 
 /**

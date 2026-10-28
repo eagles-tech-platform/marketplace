@@ -9,7 +9,7 @@ import {
   MessageSquare,
   ClipboardList,
 } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { bookingApi, serviceApi, reviewApi, ApiError, type BookingItem, type ReviewItem } from "@/lib/api";
 
 const statusStyles: Record<string, string> = {

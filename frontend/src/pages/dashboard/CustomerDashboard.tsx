@@ -11,7 +11,7 @@ import {
   Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { bookingApi, serviceApi, chatApi, notificationApi, type BookingItem, type ServiceItem, type NotificationItem } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 

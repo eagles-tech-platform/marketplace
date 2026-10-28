@@ -22,7 +22,7 @@ cp .env.example .env
 # and set a strong JWT_SECRET. The MongoDB URI you gave me is already filled in.
 npm install
 npm run seed     # populates the Category collection from the 16 job categories
-npm run dev       # http://localhost:5000
+npm run dev       # http://localhost:5001
 ```
 
 ### 2. Frontend

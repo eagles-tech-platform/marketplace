@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { DollarSign, TrendingUp, ArrowUpRight, Wallet, ShieldCheck } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { paymentApi, ApiError, type WithdrawalItem } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

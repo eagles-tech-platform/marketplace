@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Star, Trash2, MessageSquareOff } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { reviewApi, ApiError, type ReviewItem } from "@/lib/api";
 
 export default function AdminReviews() {

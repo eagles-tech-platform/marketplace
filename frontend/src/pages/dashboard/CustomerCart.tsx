@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ShoppingCart, XCircle, ArrowRight, CreditCard, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { bookingApi, paymentApi, ApiError, type BookingItem, type PaymentGateway } from "@/lib/api";
 
 export default function CustomerCart() {

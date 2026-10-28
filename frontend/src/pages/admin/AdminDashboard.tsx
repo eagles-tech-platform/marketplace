@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Users, DollarSign, ClipboardList, CheckSquare, ArrowRight } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError } from "@/lib/api";
 
 export default function AdminDashboard() {

@@ -10,7 +10,7 @@ import {
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { bookingApi, paymentApi, reviewApi, ApiError, type BookingItem, type BookingStatus } from "@/lib/api";
 
 const tabs: { label: string; value: BookingStatus | "All" }[] = [

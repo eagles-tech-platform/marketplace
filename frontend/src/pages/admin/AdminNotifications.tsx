@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Send, Megaphone, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError } from "@/lib/api";
 
 type Target = "all" | "customers" | "providers";

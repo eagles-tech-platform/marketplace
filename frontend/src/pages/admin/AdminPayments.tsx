@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CreditCard, ArrowDownLeft, ArrowUpRight, CheckCircle2, Clock, XCircle } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError } from "@/lib/api";
 
 const statusStyles: Record<string, string> = {

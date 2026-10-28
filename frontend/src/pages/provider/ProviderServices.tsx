@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, Edit3, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
-import ImageUploader from "@/components/ImageUploader";
+import DashboardLayout from "@/components/auth/DashboardLayout";
+import ImageUploader from "@/components/auth/ImageUploader";
 import { jobCategories } from "@/data/categories";
 import { serviceApi, ApiError, type ServiceItem } from "@/lib/api";
 

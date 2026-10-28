@@ -110,6 +110,8 @@ export const authApi = {
     api.post<{ message: string }>("/auth/change-password", { currentPassword, newPassword }),
   sessions: () => api.get<{ sessions: SessionItem[] }>("/auth/sessions"),
   revokeSession: (id: string) => api.delete<{ message: string }>(`/auth/sessions/${id}`),
+  updateProfile: (payload: { name: string; phoneNumber?: string; state?: string; city?: string }) =>
+    api.patch<{ message: string; user: AuthUser }>("/auth/update-profile", payload),
 };
 
 export type SessionItem = {
@@ -309,6 +311,13 @@ export type ChatMessageItem = {
   readBy: string[];
   createdAt: string;
 };
+export const chatApi = {
+  rooms: () => api.get<{ rooms: ChatRoomItem[] }>("/chat/rooms"),
+  getOrCreateRoom: (otherUserId: string) => api.post<{ room: ChatRoomItem }>("/chat/rooms", { otherUserId }),
+  messages: (roomId: string) => api.get<{ messages: ChatMessageItem[] }>(`/chat/rooms/${roomId}/messages`),
+  sendMessage: (roomId: string, payload: { content?: string; attachmentUrl?: string }) =>
+    api.post<{ message: string; data: ChatMessageItem }>(`/chat/rooms/${roomId}/messages`, payload),
+};
 
 // --- Reviews ---
 export type ReviewItem = {
@@ -334,14 +343,6 @@ export const reviewApi = {
   // admin
   adminList: () => api.get<{ reviews: ReviewItem[] }>("/reviews/admin/all"),
   remove: (id: string) => api.delete<{ message: string }>(`/reviews/${id}`),
-};
-
-export const chatApi = {
-  rooms: () => api.get<{ rooms: ChatRoomItem[] }>("/chat/rooms"),
-  getOrCreateRoom: (otherUserId: string) => api.post<{ room: ChatRoomItem }>("/chat/rooms", { otherUserId }),
-  messages: (roomId: string) => api.get<{ messages: ChatMessageItem[] }>(`/chat/rooms/${roomId}/messages`),
-  sendMessage: (roomId: string, payload: { content?: string; attachmentUrl?: string }) =>
-    api.post<{ message: string; data: ChatMessageItem }>(`/chat/rooms/${roomId}/messages`, payload),
 };
 
 export const verificationApi = {

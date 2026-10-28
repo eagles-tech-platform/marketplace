@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router";
 import { Search, Send, Paperclip, MessageSquare, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { useChat } from "@/hooks/useChat";
 import { uploadFile } from "@/lib/upload";
 

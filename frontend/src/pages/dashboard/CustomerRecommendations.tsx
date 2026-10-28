@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Sparkles, BadgeCheck, Star, MapPin, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { jobCategories } from "@/data/categories";
 import { nigerianStates, internationalCountries } from "@/data/locations";
 import { recommendationApi, paymentApi, ApiError, type RecommendationRequestItem } from "@/lib/api";

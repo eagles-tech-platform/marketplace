@@ -1,6 +1,6 @@
 import { Routes, Route } from "react-router";
 import { Toaster } from "@/components/ui/sonner";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { Capacitor } from "@capacitor/core";
 import NativeEntry from "@/components/NativeEntry";
 
@@ -18,6 +18,9 @@ import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
 import Login from "./pages/auth/Login";
 import Signup from "./pages/auth/Signup";
+import ForgotPassword from "@/pages/auth/ForgotPassword";
+import ResetPassword from "@/pages/auth/ResetPassword";
+import VerifyEmail from "@/pages/auth/VerifyEmail";
 
 // Dashboard Pages
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard";
@@ -76,7 +79,10 @@ export default function App() {
 
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
-          
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+
           {/* Customer Dashboard Routes — server-verified session + role required */}
           <Route element={<ProtectedRoute allow={["customer"]} />}>
             <Route path="/dashboard" element={<CustomerDashboard />} />

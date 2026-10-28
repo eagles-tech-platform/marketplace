@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ClipboardList, Clock, CheckCircle2, XCircle } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError } from "@/lib/api";
 
 const tabs: { label: string; value: string }[] = [

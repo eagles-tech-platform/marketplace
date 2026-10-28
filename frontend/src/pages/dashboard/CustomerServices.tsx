@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Search, Star, MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { jobCategories } from "@/data/categories";
 import { serviceApi, ApiError, type ServiceItem } from "@/lib/api";
 

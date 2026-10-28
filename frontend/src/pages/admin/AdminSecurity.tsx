@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
-import DashboardLayout from "@/components/DashboardLayout";
+import DashboardLayout from "@/components/auth/DashboardLayout";
 import { adminApi, ApiError, type LoginAttemptItem } from "@/lib/api";
 
 export default function AdminSecurity() {
