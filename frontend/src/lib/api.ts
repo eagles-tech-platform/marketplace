@@ -1,7 +1,7 @@
 // Minimal fetch wrapper for the new Express/MongoDB backend.
 // Cookies (httpOnly JWT) are sent automatically via `credentials: "include"`.
 
-const apiUrl = (import.meta.env.VITE_API_URL ?? "").trim().replace(/\/+$/, "");
+const apiUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
 export const API_BASE_URL = apiUrl
   ? `${apiUrl.endsWith("/api") ? apiUrl : `${apiUrl}/api`}`
