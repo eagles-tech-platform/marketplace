@@ -541,3 +541,36 @@ export const subscriptionApi = {
   subscribe: (payload: { planId: string; interval: "monthly" | "yearly"; gateway: "paystack" | "flutterwave" }) =>
     api.post<{ message: string; subscription: unknown }>("/subscriptions/subscribe", payload),
 };
+
+// --- Help Center & Contact (public support system) ---
+export type Category = { id: string; label: string; description: string; count: number };
+export type ArticleSummary = { _id: string; title: string; slug: string; category: string; summary: string; featured?: boolean };
+export type Article = ArticleSummary & { content: string; updatedAt: string };
+export type TicketStatus = "open" | "in_progress" | "resolved";
+export type Reply = { by: "staff" | "customer"; message: string; at: string };
+export type TrackedTicket = { ticketId: string; subject: string; topic: string; status: TicketStatus; message: string; createdAt: string; replies: Reply[] };
+export type AdminTicket = TrackedTicket & { _id: string; name: string; email: string; phone?: string };
+export type ContactInput = { name: string; email: string; phone?: string; topic: string; subject: string; message: string; website?: string };
+
+export const supportApi = {
+  categories: () => api.get<Category[]>("/help/categories"),
+  articles: (p: { q?: string; category?: string; featured?: boolean }) =>
+    api.get<ArticleSummary[]>(`/help/articles${buildQueryString({ q: p.q, category: p.category, featured: p.featured ? "true" : undefined })}`),
+  article: (slug: string) =>
+    api.get<{ article: Article; related: ArticleSummary[] }>(`/help/articles/${encodeURIComponent(slug)}`),
+  feedback: (slug: string, helpful: boolean) =>
+    api.post<{ ok: true }>(`/help/articles/${encodeURIComponent(slug)}/feedback`, { helpful }),
+  createTicket: (payload: ContactInput) => api.post<{ ticketId: string }>("/contact", payload),
+  track: (ticketId: string, email: string) => api.post<TrackedTicket>("/contact/track", { ticketId, email }),
+  customerReply: (ticketId: string, email: string, message: string) =>
+    api.post<TrackedTicket>("/contact/reply", { ticketId, email, message }),
+};
+
+// Admin only. Named supportAdminApi because you already have an `adminApi`.
+export const supportAdminApi = {
+  stats: () => api.get<Record<TicketStatus | "total", number>>("/admin/support/stats"),
+  tickets: (p: { status?: string; q?: string; page?: number }) =>
+    api.get<{ items: AdminTicket[]; total: number; page: number; pages: number }>(`/admin/support/tickets${buildQueryString(p)}`),
+  setStatus: (id: string, status: TicketStatus) => api.patch<AdminTicket>(`/admin/support/tickets/${id}/status`, { status }),
+  reply: (id: string, message: string) => api.post<AdminTicket>(`/admin/support/tickets/${id}/reply`, { message }),
+};

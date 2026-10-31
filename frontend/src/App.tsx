@@ -21,6 +21,10 @@ import Signup from "./pages/auth/Signup";
 import ForgotPassword from "@/pages/auth/Forgotpassword";
 import ResetPassword from "@/pages/auth/Resetpassword";
 import VerifyEmail from "@/pages/auth/Verifyemail";
+import HelpCenter from "./pages/HelpCenter";
+import Contact from "./pages/Contact";
+import HelpArticlePage from "./pages/HelpArticle";
+import TrackTicket from "./pages/TrackTicket";
 
 // Dashboard Pages
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard";
@@ -75,6 +79,10 @@ export default function App() {
             <Route path="/services/:id" element={<ServiceDetail />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:id" element={<BlogPost />} />
+            <Route path="/help" element={<HelpCenter />} />
+            <Route path="/help/:slug" element={<HelpArticlePage />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/support/track" element={<TrackTicket />} />
           </Route>
 
           <Route path="/login" element={<Login />} />

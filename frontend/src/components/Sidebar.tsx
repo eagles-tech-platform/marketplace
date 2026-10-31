@@ -22,6 +22,7 @@ import {
   Sparkles,
   ShieldAlert,
   PanelLeftOpen,
+  LifeBuoy, 
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -74,6 +75,7 @@ const LINKS: Record<Role, { label: string; icon: React.ElementType; path: string
     { label: "Announcements", icon: Megaphone, path: "/admin/notifications" },
     { label: "Blog", icon: BookOpen, path: "/admin/blog" },
     { label: "Feedback", icon: MessageCircle, path: "/admin/feedback" },
+    { label: "Support", icon: LifeBuoy, path: "/admin/support" }, 
     { label: "Settings", icon: Settings, path: "/admin/settings" },
   ],
 };

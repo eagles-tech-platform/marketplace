@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { CheckCircle2, Shield, Clock, Award, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/Navbar";
@@ -20,20 +20,31 @@ function formatStat(n: number): string {
 
 export default function About() {
   const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
+  const location = useLocation();
 
+  useEffect(() => {
+    if (!location.hash) return;
+
+    const id = decodeURIComponent(location.hash.slice(1));
+
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [location.hash]);
   useEffect(() => {
     metaApi.stats().then(setPlatformStats).catch(() => setPlatformStats(null));
   }, []);
 
   const stats = platformStats
     ? [
-        { value: `${platformStats.totalCategories}+`, label: "Service Categories" },
-        { value: `${platformStats.totalNiches}+`, label: "Job Niches" },
-        { value: formatStat(platformStats.totalProviders), label: "Verified Providers" },
-        { value: formatStat(platformStats.totalCustomers), label: "Customers" },
-        { value: platformStats.completedBookings > 0 ? `${platformStats.satisfactionRate}%` : "—", label: "Satisfaction Rate" },
-        { value: String(platformStats.totalStates), label: "States Covered" },
-      ]
+      { value: `${platformStats.totalCategories}+`, label: "Service Categories" },
+      { value: `${platformStats.totalNiches}+`, label: "Job Niches" },
+      { value: formatStat(platformStats.totalProviders), label: "Verified Providers" },
+      { value: formatStat(platformStats.totalCustomers), label: "Customers" },
+      { value: platformStats.completedBookings > 0 ? `${platformStats.satisfactionRate}%` : "—", label: "Satisfaction Rate" },
+      { value: String(platformStats.totalStates), label: "States Covered" },
+    ]
     : [];
 
   return (
@@ -55,7 +66,7 @@ export default function About() {
       </section>
 
       {/* Our Story */}
-      <section className="py-20">
+      <section id="story" className="scroll-mt-24 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
@@ -88,7 +99,7 @@ export default function About() {
       </section>
 
       {/* Stats */}
-      <section className="py-20 bg-slate-50">
+      <section id="stats" className="scroll-mt-24 bg-slate-50 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
             {stats.map((stat) => (
@@ -102,7 +113,7 @@ export default function About() {
       </section>
 
       {/* Values */}
-      <section className="py-20">
+      <section id="values" className="scroll-mt-24 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold text-slate-800 mb-4">Our Values</h2>
@@ -126,7 +137,7 @@ export default function About() {
       </section>
 
       {/* How It Works */}
-      <section className="py-20 bg-gradient-to-br from-teal-50 to-orange-50">
+      <section id="how-it-works" className="scroll-mt-24 bg-gradient-to-br from-teal-50 to-orange-50 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl font-bold text-slate-800 mb-4">How It Works</h2>
@@ -158,7 +169,7 @@ export default function About() {
       </section>
 
       {/* CTA */}
-      <section className="py-20">
+      <section id="cta" className="scroll-mt-24 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold text-slate-800 mb-6">Join Our Community Today</h2>
           <p className="text-slate-500 max-w-xl mx-auto mb-8">

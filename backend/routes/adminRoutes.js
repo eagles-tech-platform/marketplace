@@ -16,6 +16,7 @@ const {
 const router = express.Router();
 
 router.use(protect, requireRole("admin"));
+router.use("/support", require("./supportAdminRoutes"));
 
 router.get("/dashboard-summary", getDashboardSummary);
 router.get("/provider-applications", listProviderApplications);

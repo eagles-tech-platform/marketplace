@@ -85,6 +85,8 @@ app.use("/api/posts", require("./routes/postRoutes"));
 app.use("/api/recommendations", require("./routes/recommendationRoutes"));
 app.use("/api/subscriptions", require("./routes/subscriptionRoutes"));
 app.use("/api/uploads", require("./routes/uploadRoutes"));
+app.use("/api/help", require("./routes/helpRoutes"));
+app.use("/api/contact", require("./routes/contactRoutes"));
 
 // Serves files saved by local-mode uploads (UPLOAD_MODE=local, the default).
 // Not used when UPLOAD_MODE=s3 — those URLs point directly at the S3 bucket.

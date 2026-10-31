@@ -17,19 +17,14 @@ function buildTransporter() {
  * callers should catch this so a broken mail server never silently
  * "succeeds" (that was part of why verification mail was never arriving).
  */
-async function sendEmail({ to, subject, html }) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+async function sendEmail({ to, subject, html, replyTo }) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     throw new Error(
       "SMTP is not configured. Set SMTP_HOST/SMTP_USER/SMTP_PASS in backend/.env"
     );
   }
   const transporter = buildTransporter();
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
-    to,
-    subject,
-    html,
-  });
+  await transporter.sendMail({ from: process.env.EMAIL_FROM || process.env.SMTP_USER, to, subject, html, replyTo });
 }
 
 function verificationEmailTemplate({ name, verifyUrl }) {

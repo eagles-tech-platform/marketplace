@@ -12,7 +12,7 @@ const {
   passwordResetTemplate,
 } = require("../utils/sendEmail");
 
-const CLIENT_URL = () => process.env.CLIENT_URL || "http://localhost:5173";
+const CLIENT_URL = () => process.env.CLIENT_URL;
 
 function requestMeta(req) {
   return { ip: req.ip || "", userAgent: req.headers["user-agent"] || "" };
