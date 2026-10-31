@@ -1,5 +1,5 @@
 // Support emails, built on your existing sendEmail (utils/email.js).
-const { sendEmail } = require("./email");
+const { sendEmail } = require("./sendEmail");
 const { oneLine } = require("./supportValidation");
 
 const escapeHtml = (s = "") =>
