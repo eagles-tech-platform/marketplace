@@ -59,6 +59,7 @@ import AdminPayments from "./pages/admin/AdminPayments";
 import AdminNotifications from "./pages/admin/AdminNotifications";
 import AdminBlog from "./pages/admin/AdminBlog";
 import AdminFeedback from "./pages/admin/AdminFeedback";
+import SupportAdmin from "./pages/admin/SupportAdmin"
 
 // Shared
 import NotFound from "./pages/NotFound";
@@ -128,6 +129,7 @@ export default function App() {
             <Route path="/admin/notifications" element={<AdminNotifications />} />
             <Route path="/admin/blog" element={<AdminBlog />} />
             <Route path="/admin/feedback" element={<AdminFeedback />} />
+            <Route path="/admin/support" element={<SupportAdmin />} />
             <Route path="/admin/settings" element={<AdminSettings />} />
           </Route>
 
