@@ -19,4 +19,17 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// One pending withdrawal per user: closes the race where two simultaneous
+// requests both pass the "available balance" check.
+paymentSchema.index(
+  { user: 1 },
+  {
+    unique: true,
+    name: "one_pending_withdrawal_per_user",
+    partialFilterExpression: { purpose: "withdrawal", status: "pending" },
+  }
+);
+paymentSchema.index({ user: 1, purpose: 1, status: 1 });
+paymentSchema.index({ booking: 1, purpose: 1, status: 1 });
+
 module.exports = mongoose.model("Payment", paymentSchema);

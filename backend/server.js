@@ -3,6 +3,8 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
 const connectDB = require("./config/db");
 const { initSocket } = require("./socket");
@@ -21,9 +23,7 @@ app.set("trust proxy", 1);
 const PORT = process.env.PORT;
 
 if (!PORT || !/^\d+$/.test(PORT) || Number(PORT) < 1 || Number(PORT) > 65535) {
-  throw new Error(
-    "PORT must be provided by the deployment platform or defined in .env."
-  );
+  throw new Error("PORT must be provided by the deployment platform or defined in .env.");
 }
 
 // CLIENT_URL supports multiple comma-separated frontend origins.
@@ -38,39 +38,73 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
   });
 
 if (allowedOrigins.length === 0) {
-  console.warn(
-    "[server] CLIENT_URL is not configured. Browser requests from other origins will not be allowed."
-  );
+  console.warn("[server] CLIENT_URL is not configured. Browser requests from other origins will not be allowed.");
 }
 
 const corsOptions = {
   origin(origin, callback) {
-    // Allow requests without an Origin header, such as server-to-server calls.
+    // Allow requests without an Origin header (server-to-server calls, payment webhooks).
     if (!origin) return callback(null, true);
-  
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } return callback(null, false);
+    return callback(null, allowedOrigins.includes(origin));
   },
   credentials: true,
 };
 
+// --------------------------------------------------
+// Security + parsing middleware
+// --------------------------------------------------
+
+// crossOriginResourcePolicy "cross-origin" lets your frontend display uploaded images
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors(corsOptions));
 
+// rawBody is needed for Paystack webhook signature verification
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, res, buf) => {
       req.rawBody = Buffer.from(buf);
     },
   })
 );
-
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" })); // extended:true allows nested operator objects like a[$ne]=x
 app.use(cookieParser());
 
-app.get("/api/health", (req, res) => { res.status(200).json({ status: "ok", time: new Date().toISOString(), }) });
+// --------------------------------------------------
+// Rate limiting
+// --------------------------------------------------
 
-app.use("/api/auth", authRoutes);
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please try again later." },
+  // Gateways must never be throttled
+  skip: (req) => req.path.startsWith("/payments/webhook/"),
+});
+
+// Failed attempts only: normal logins and session checks don't count
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts. Please try again later." },
+});
+
+app.use("/api", apiLimiter);
+
+// --------------------------------------------------
+// Routes
+// --------------------------------------------------
+
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ status: "ok", time: new Date().toISOString() });
+});
+
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/meta", metaRoutes);
 app.use("/api/services", require("./routes/serviceRoutes"));
 app.use("/api/bookings", require("./routes/bookingRoutes"));
@@ -93,15 +127,19 @@ app.use("/api/contact", require("./routes/contactRoutes"));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use((req, res) => {
-  res.status(404).json({
-    message: `Route not found: ${req.method} ${req.originalUrl}`,
-  });
+  res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 
 app.use((err, req, res, next) => {
-  console.error("[server] Unhandled error:", err);
   if (res.headersSent) return next(err);
-  return res.status(500).json({ message: "Internal server error.", });
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ message: "Invalid JSON." });
+  }
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ message: "Request body too large." });
+  }
+  console.error("[server] Unhandled error:", err);
+  return res.status(500).json({ message: "Internal server error." });
 });
 
 async function startServer() {
@@ -110,13 +148,9 @@ async function startServer() {
     initSocket(httpServer);
 
     httpServer.listen(Number(PORT), "0.0.0.0", () => {
-      console.log(
-        `[server] Marketplace backend running on port ${PORT}`
-      );
+      console.log(`[server] Marketplace backend running on port ${PORT}`);
       console.log(`[server] Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`[server] Allowed frontend origins: ${
-        allowedOrigins.join(", ") || "(none configured)"
-      }`);
+      console.log(`[server] Allowed frontend origins: ${allowedOrigins.join(", ") || "(none configured)"}`);
     });
   } catch (error) {
     console.error("[server] Startup failed:", error);
