@@ -8,3 +8,4 @@ apk-builds/
 android-builds/
 *.zip
 WORK_IN_PROGRESS.md
+debug.log
