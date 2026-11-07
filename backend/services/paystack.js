@@ -88,11 +88,11 @@ async function createSubaccount({ businessName, bankCode, accountNumber, platfor
  * platform's main account.
  * https://paystack.com/docs/api/transaction/#initialize
  */
-async function initializeTransaction({ email, amountNaira, reference, callbackUrl, subaccountCode, metadata }) {
+async function initializeTransaction({ email, amountNaira, reference, callbackUrl, subaccountCode, metadata, currency = "NGN" }) {
   const payload = {
     email,
     amount: Math.round(amountNaira * 100), // Paystack expects kobo
-    currency: "NGN",
+    currency,
     reference,
     callback_url: callbackUrl,
     metadata,
@@ -132,6 +132,25 @@ async function verifyTransaction(reference) {
  * Verifies the `x-paystack-signature` header on incoming webhooks. The
  * signature is an HMAC SHA512 of the RAW request body using your secret key.
  */
+
+/** Charge a previously authorized reusable payment method for a renewal. */
+async function chargeAuthorization({ authorizationCode, email, amountKobo, reference, metadata, currency = "NGN" }) {
+  const data = await request("/transaction/charge_authorization", {
+    method: "POST",
+    body: JSON.stringify({
+      authorization_code: authorizationCode,
+      email,
+      amount: String(amountKobo),
+      currency,
+      reference,
+      metadata,
+      queue: true,
+    }),
+  });
+  if (!data.status) throw new Error(data.message || "Could not charge saved authorization.");
+  return data.data;
+}
+
 function verifyWebhookSignature(rawBody, signatureHeader) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!rawBody || !signatureHeader || !secret) return false;
@@ -147,5 +166,6 @@ module.exports = {
   createSubaccount,
   initializeTransaction,
   verifyTransaction,
+  chargeAuthorization,
   verifyWebhookSignature,
 };

@@ -98,16 +98,22 @@ async function initializeTransaction({
   redirectUrl,
   subaccountId,
   meta,
+  currency = "NGN",
+  paymentPlanId,
   platformFeePercent = PLATFORM_FEE_PERCENT,
 }) {
   const payload = {
     tx_ref: reference,
     amount: amountNaira,
-    currency: "NGN",
+    currency,
     redirect_url: redirectUrl,
     customer: { email, name },
     meta,
   };
+  if (paymentPlanId) {
+    payload.payment_plan = Number(paymentPlanId);
+    payload.payment_options = "card";
+  }
   if (subaccountId) {
     payload.subaccounts = [
       {
@@ -148,19 +154,34 @@ async function verifyByReference(txRef) {
   return data.data; // { status: 'successful' | ..., amount, currency, tx_ref, ... }
 }
 
-/**
- * Flutterwave webhooks send back the "verif-hash" header, which must match
- * the secret hash YOU set in the Flutterwave dashboard (FLW_WEBHOOK_HASH).
- * Unlike Paystack, this isn't a signature of the body, it's a shared secret.
- * https://developer.flutterwave.com/docs/integration-guides/webhooks
- */
-function verifyWebhookSignature(signatureHeader) {
-  const secret = process.env.FLW_WEBHOOK_HASH;
-  if (!secret || !signatureHeader) return false;
+/** Create a provider-managed recurring payment plan. */
+async function createPaymentPlan({ name, amount, currency, interval }) {
+  const data = await request("/payment-plans", {
+    method: "POST",
+    body: JSON.stringify({ name, amount, currency, interval }),
+  });
+  if (data.status !== "success" || !data.data?.id) throw new Error(data.message || "Could not create Flutterwave payment plan.");
+  return data.data;
+}
 
-  const expected = Buffer.from(secret);
-  const received = Buffer.from(String(signatureHeader));
-  return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+/** Verify a Flutterwave transaction using the transaction ID in its webhook. */
+async function verifyById(transactionId) {
+  const data = await request(`/transactions/${encodeURIComponent(String(transactionId))}/verify`);
+  if (data.status !== "success" || !data.data) throw new Error(data.message || "Could not verify Flutterwave transaction.");
+  return data.data;
+}
+
+/** Current Flutterwave webhook signature: HMAC-SHA256(raw body, secret hash), base64. */
+function verifyWebhookSignature(rawBody, signatureHeader) {
+  const secret = process.env.FLW_SECRET_HASH || process.env.FLW_WEBHOOK_HASH;
+  if (!secret || !rawBody || !signatureHeader) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(signatureHeader));
+  if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+  // Backward compatibility with legacy Flutterwave accounts configured for verif-hash.
+  const legacy = Buffer.from(secret);
+  return legacy.length === b.length && crypto.timingSafeEqual(legacy, b);
 }
 
 module.exports = {
@@ -170,5 +191,7 @@ module.exports = {
   initializeTransaction,
   verifyTransaction,
   verifyByReference,
+  createPaymentPlan,
+  verifyById,
   verifyWebhookSignature,
 };

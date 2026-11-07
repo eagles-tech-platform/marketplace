@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, BadgeCheck, Gift } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import Navbar from "@/components/Navbar";
+// import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { subscriptionApi, ApiError, type MySubscription } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,7 +52,7 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navbar />
+      {/* <Navbar /> */}
 
       <section className="relative pt-28 pb-16 bg-gradient-to-br from-teal-500 via-teal-600 to-orange-500">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-white">

@@ -10,6 +10,7 @@ const { PLATFORM_FEE_PERCENT, CALLBACK_BASE_URL, isLive } = require("../config/p
 const paystack = require("../services/paystack");
 const flutterwave = require("../services/flutterwave");
 const { notify } = require("../utils/notify");
+const { handlePaystackChargeSuccess, handleFlutterwaveWebhook } = require("./subscriptionController");
 
 // ---------- helpers ----------
 
@@ -145,10 +146,11 @@ async function confirmWithGateway(payment) {
   if (payment.provider === "paystack") {
     const tx = await paystack.verifyTransaction(payment.reference);
     if (tx.status !== "success") return { ok: false, reason: `gateway status: ${tx.status}`, final: false };
-    if (tx.currency && tx.currency !== "NGN") return { ok: false, reason: "wrong currency", final: true };
+    if (tx.reference !== payment.reference) return { ok: false, reason: "reference mismatch", final: true };
+    if (String(tx.currency || "").toUpperCase() !== String(payment.currency || "NGN").toUpperCase()) return { ok: false, reason: "missing or wrong currency", final: true };
     const expectedKobo = Math.round(payment.amount * 100);
-    if (tx.amount < expectedKobo) {
-      return { ok: false, reason: `underpaid: got ${tx.amount} kobo, expected ${expectedKobo}`, final: true };
+    if (!Number.isFinite(Number(tx.amount)) || Number(tx.amount) !== expectedKobo) {
+      return { ok: false, reason: `amount mismatch: got ${tx.amount}, expected ${expectedKobo} minor units`, final: true };
     }
     return { ok: true };
   }
@@ -156,9 +158,12 @@ async function confirmWithGateway(payment) {
   if (payment.provider === "flutterwave") {
     const tx = await flutterwave.verifyByReference(payment.reference);
     if (tx.status !== "successful") return { ok: false, reason: `gateway status: ${tx.status}`, final: false };
-    if (tx.currency && tx.currency !== "NGN") return { ok: false, reason: "wrong currency", final: true };
-    if (Math.round(Number(tx.amount) * 100) < Math.round(payment.amount * 100)) {
-      return { ok: false, reason: `underpaid: got ${tx.amount}, expected ${payment.amount}`, final: true };
+    if (tx.tx_ref !== payment.reference) return { ok: false, reason: "reference mismatch", final: true };
+    if (String(tx.currency || "").toUpperCase() !== String(payment.currency || "NGN").toUpperCase()) return { ok: false, reason: "missing or wrong currency", final: true };
+    const receivedMinor = Math.round(Number(tx.amount) * 100);
+    const expectedMinor = Math.round(payment.amount * 100);
+    if (!Number.isFinite(receivedMinor) || receivedMinor !== expectedMinor) {
+      return { ok: false, reason: `amount mismatch: got ${tx.amount}, expected ${payment.amount}`, final: true };
     }
     return { ok: true };
   }
@@ -371,8 +376,11 @@ async function paystackWebhook(req, res) {
     }
     const event = req.body;
     if (event?.event === "charge.success" && typeof event.data?.reference === "string") {
-      const payment = await Payment.findOne({ reference: event.data.reference });
-      if (payment) await settlePayment(payment);
+      const handledAsSubscription = await handlePaystackChargeSuccess(event.data.reference);
+      if (!handledAsSubscription) {
+        const payment = await Payment.findOne({ reference: event.data.reference });
+        if (payment) await settlePayment(payment);
+      }
     }
     return res.sendStatus(200);
   } catch (err) {
@@ -384,17 +392,18 @@ async function paystackWebhook(req, res) {
 // POST /api/payments/webhook/flutterwave
 async function flutterwaveWebhook(req, res) {
   try {
-    const signature = req.headers["verif-hash"];
-    if (!flutterwave.verifyWebhookSignature(signature)) {
+    const signature = req.headers["flutterwave-signature"] || req.headers["verif-hash"];
+    if (!flutterwave.verifyWebhookSignature(req.rawBody, signature)) {
       return res.status(401).json({ message: "Invalid signature." });
     }
     const event = req.body;
-    if (event?.status === "successful" || event?.data?.status === "successful") {
-      const reference = event.txRef || event.data?.tx_ref;
-      if (typeof reference === "string") {
-        const payment = await Payment.findOne({ reference });
-        if (payment) await settlePayment(payment);
-      }
+    // Subscription events and recurring charges are processed by the dedicated
+    // subscription handler; it verifies the transaction against Flutterwave.
+    await handleFlutterwaveWebhook(event);
+    const reference = event?.data?.tx_ref || event?.txRef || event?.data?.txRef;
+    if (typeof reference === "string") {
+      const payment = await Payment.findOne({ reference });
+      if (payment && !["subscription_initial", "subscription_renewal"].includes(payment.purpose)) await settlePayment(payment);
     }
     return res.sendStatus(200);
   } catch (err) {

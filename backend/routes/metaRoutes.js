@@ -36,8 +36,8 @@ router.get("/stats", async (req, res) => {
       completedBookings,
       reviewStats,
     ] = await Promise.all([
-      User.countDocuments({ canBeProvider: true, providerApprovalStatus: "approved", isActive: true }),
-      User.countDocuments({ canBeCustomer: true, isActive: true }),
+      User.countDocuments({ isAdmin: { $ne: true }, canBeProvider: true, providerApprovalStatus: "approved", isActive: true }),
+      User.countDocuments({ isAdmin: { $ne: true }, isActive: true, $nor: [{ canBeProvider: true, providerApprovalStatus: "approved" }] }),
       Service.countDocuments({ isActive: true }),
       Booking.countDocuments({ status: "completed" }),
       Review.aggregate([

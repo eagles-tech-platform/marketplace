@@ -1,85 +1,153 @@
 const { Server } = require("socket.io");
-const jwt = require("jsonwebtoken");
-const User = require("./models/User");
 const ChatRoom = require("./models/ChatRoom");
+const Message = require("./models/Message");
+const mongoose = require("mongoose");
+const { authenticateAccessToken } = require("./middleware/authMiddleware");
 const { persistMessage } = require("./controllers/chatController");
 
-function parseCookies(cookieHeader = "") {
-  const out = {};
-  cookieHeader.split(";").forEach((pair) => {
-    const idx = pair.indexOf("=");
-    if (idx === -1) return;
-    const key = pair.slice(0, idx).trim();
-    const value = pair.slice(idx + 1).trim();
-    if (key) out[key] = decodeURIComponent(value);
-  });
-  return out;
+function configuredOrigins() {
+  return (process.env.CLIENT_URL || "").split(",").map((v) => v.trim()).filter(Boolean).map((v) => {
+    try { return new URL(v).origin; } catch { return null; }
+  }).filter(Boolean);
 }
 
 function initSocket(httpServer) {
+  const origins = configuredOrigins();
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:5173",
+      origin(origin, callback) {
+        if (!origin || origins.includes(origin)) return callback(null, true);
+        return callback(new Error("Origin not allowed"));
+      },
       credentials: true,
+      methods: ["GET", "POST"],
     },
+    allowRequest(req, callback) {
+      const origin = req.headers.origin;
+      callback(null, !origin || origins.includes(origin));
+    },
+    pingInterval: 25000,
+    pingTimeout: 20000,
+    maxHttpBufferSize: 1e6,
   });
 
-  // Auth middleware — reuses the same httpOnly JWT cookie as the REST API,
-  // so logging in once covers both.
+  // Authenticate with the short-lived access token (same rules as REST).
+  // The client passes it as `auth: { token }` and must reconnect with a fresh
+  // token after refreshing its session.
   io.use(async (socket, next) => {
     try {
-      const cookieName = process.env.JWT_COOKIE_NAME || "mp_token";
-      const cookies = parseCookies(socket.handshake.headers.cookie);
-      const token = cookies[cookieName];
-      if (!token) return next(new Error("Not authenticated"));
-
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id);
-      if (!user || !user.isActive) return next(new Error("Not authenticated"));
-
-      socket.userId = String(user._id);
+      const token = socket.handshake.auth?.token;
+      if (typeof token !== "string" || !token) return next(new Error("Not authenticated"));
+      const auth = await authenticateAccessToken(token);
+      if (!auth) return next(new Error("Session invalid or signed out"));
+      socket.data.token = token;
+      socket.data.userId = String(auth.user._id);
       next();
     } catch (err) {
-      next(new Error("Not authenticated"));
+      next(new Error(err.name === "TokenExpiredError" ? "ACCESS_TOKEN_EXPIRED" : "Not authenticated"));
     }
   });
 
   io.on("connection", (socket) => {
-    // Personal room so we can push things (e.g. "user X is now online") to a
-    // user regardless of which chat room they currently have open.
-    socket.join(`user:${socket.userId}`);
+    const userId = socket.data.userId;
+    socket.join(`user:${userId}`);
 
-    socket.on("join_room", async (roomId) => {
+    // Re-validate before every client event so a deactivated account or an
+    // expired access token can't keep using an already-open socket.
+    socket.use(async (packet, next) => {
+      // Token hand-over is validated by its own handler below.
+      if (packet[0] === "update_token") return next();
       try {
-        const room = await ChatRoom.findById(roomId);
-        if (!room || !room.participants.some((p) => String(p) === socket.userId)) return;
-        socket.join(String(roomId));
+        const auth = await authenticateAccessToken(socket.data.token);
+        if (!auth || String(auth.user._id) !== userId) throw new Error("invalid");
+        next();
       } catch (err) {
-        console.error("[socket] join_room error:", err.message);
+        const expired = err?.name === "TokenExpiredError";
+        socket.emit(expired ? "token_expired" : "session_invalid", {
+          message: expired
+            ? "Access token expired. Refresh your session and reconnect."
+            : "Your session has ended. Please sign in again.",
+        });
+        socket.disconnect(true);
       }
     });
 
-    socket.on("leave_room", (roomId) => {
-      socket.leave(String(roomId));
+    // The client sends each refreshed access token so the connection survives
+    // token rotation without dropping in-flight events.
+    socket.on("update_token", async (token) => {
+      try {
+        if (typeof token !== "string" || !token) throw new Error("invalid");
+        const auth = await authenticateAccessToken(token);
+        if (!auth || String(auth.user._id) !== userId) throw new Error("invalid");
+        socket.data.token = token;
+      } catch {
+        socket.emit("session_invalid", { message: "Your session has ended. Please sign in again." });
+        socket.disconnect(true);
+      }
     });
 
-    socket.on("send_message", async ({ roomId, content, attachmentUrl }, ack) => {
+    socket.on("join_room", async (payload, ack) => {
+      const roomId = typeof payload === "string" ? payload : payload?.roomId;
       try {
-        const message = await persistMessage({
-          roomId,
-          senderId: socket.userId,
-          content,
-          attachmentUrl,
-        });
-        io.to(String(roomId)).emit("new_message", message);
-        if (typeof ack === "function") ack({ ok: true, message });
+        if (!mongoose.isValidObjectId(roomId)) throw new Error("Invalid conversation.");
+        const room = await ChatRoom.findOne({ _id: roomId, participants: userId }).select("_id");
+        if (!room) throw new Error("Conversation not found or access denied.");
+        await socket.join(String(room._id));
+        if (typeof ack === "function") ack({ ok: true, roomId: String(room._id) });
       } catch (err) {
         if (typeof ack === "function") ack({ ok: false, error: err.message });
       }
     });
 
-    socket.on("typing", ({ roomId, isTyping }) => {
-      socket.to(String(roomId)).emit("typing", { roomId, userId: socket.userId, isTyping: !!isTyping });
+    socket.on("leave_room", async (payload, ack) => {
+      const roomId = typeof payload === "string" ? payload : payload?.roomId;
+      if (typeof roomId === "string" && mongoose.isValidObjectId(roomId)) await socket.leave(roomId);
+      if (typeof ack === "function") ack({ ok: true });
+    });
+
+    socket.on("send_message", async (payload = {}, ack) => {
+      try {
+        const { roomId, content, attachmentUrl } = payload;
+        if (!mongoose.isValidObjectId(roomId)) throw new Error("Invalid conversation.");
+        if (typeof content !== "string" || content.length > 5000) throw new Error("Message must be 5,000 characters or fewer.");
+        if (attachmentUrl !== undefined && (typeof attachmentUrl !== "string" || attachmentUrl.length > 2048)) throw new Error("Invalid attachment URL.");
+        const room = await ChatRoom.findOne({ _id: roomId, participants: userId }).select("_id");
+        if (!room) throw new Error("Conversation not found or access denied.");
+        const message = await persistMessage({ roomId, senderId: userId, content: content.trim(), attachmentUrl });
+        io.to(String(roomId)).emit("new_message", message);
+        if (typeof ack === "function") ack({ ok: true, message });
+      } catch (err) {
+        if (typeof ack === "function") ack({ ok: false, error: err.message || "Could not send message." });
+      }
+    });
+
+    socket.on("mark_read", async (payload = {}, ack) => {
+      try {
+        const { roomId } = payload;
+        if (!mongoose.isValidObjectId(roomId)) throw new Error("Invalid conversation.");
+        const room = await ChatRoom.findOne({ _id: roomId, participants: userId }).select("_id");
+        if (!room) throw new Error("Conversation not found or access denied.");
+        const result = await Message.updateMany(
+          { chatRoom: roomId, sender: { $ne: userId }, readBy: { $ne: userId } },
+          { $addToSet: { readBy: userId } }
+        );
+        socket.to(String(roomId)).emit("read_receipt", { roomId: String(roomId), userId, readAt: new Date() });
+        if (typeof ack === "function") ack({ ok: true, modifiedCount: result.modifiedCount });
+      } catch (err) {
+        if (typeof ack === "function") ack({ ok: false, error: err.message });
+      }
+    });
+
+    socket.on("typing", async (payload = {}) => {
+      try {
+        const { roomId, isTyping } = payload;
+        if (!mongoose.isValidObjectId(roomId)) return;
+        const room = await ChatRoom.findOne({ _id: roomId, participants: userId }).select("_id");
+        if (!room) return;
+        socket.to(String(roomId)).emit("typing", { roomId: String(roomId), userId, isTyping: !!isTyping });
+      } catch (err) {
+        console.error("[socket] typing event failed:", err.message);
+      }
     });
   });
 

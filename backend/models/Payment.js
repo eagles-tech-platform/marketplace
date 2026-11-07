@@ -6,7 +6,7 @@ const paymentSchema = new mongoose.Schema(
     booking: { type: mongoose.Schema.Types.ObjectId, ref: "Booking" },
     purpose: {
       type: String,
-      enum: ["provider_slot", "recommendation_fee", "booking_payment", "verification_badge", "withdrawal"],
+      enum: ["provider_slot", "recommendation_fee", "booking_payment", "verification_badge", "withdrawal", "subscription_initial", "subscription_renewal"],
       required: true,
     },
     provider: { type: String, enum: ["paystack", "flutterwave", "bank_transfer"], required: true },

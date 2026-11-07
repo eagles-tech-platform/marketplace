@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Search, PenLine, Heart, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import Navbar from "@/components/Navbar";
+// import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/hooks/useAuth";
 import { postApi, ApiError, type PostItem } from "@/lib/api";
@@ -40,7 +40,7 @@ export default function Blog() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navbar />
+      {/* <Navbar /> */}
 
       {/* Hero */}
       <section className="relative pt-28 pb-12 bg-gradient-to-br from-teal-500 via-teal-600 to-orange-500">

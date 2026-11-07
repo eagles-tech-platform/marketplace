@@ -1,5 +1,9 @@
 // Minimal fetch wrapper for the new Express/MongoDB backend.
-// Cookies (httpOnly JWT) are sent automatically via `credentials: "include"`.
+// Auth model: a short-lived access token is kept IN MEMORY ONLY and sent as
+// `Authorization: Bearer`. A long-lived refresh token lives in an HttpOnly
+// cookie (path /api/auth) that JavaScript can never read. When the access
+// token expires, one shared /auth/refresh call mints a new one and the failed
+// request is retried once.
 
 const apiUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
@@ -33,20 +37,88 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// ---- access token (memory only; never localStorage) ----
+let accessToken: string | null = null;
+const tokenListeners = new Set<(token: string | null) => void>();
+
+export function getAccessToken() {
+  return accessToken;
+}
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+  tokenListeners.forEach((fn) => fn(token));
+}
+export function onAccessTokenChange(fn: (token: string | null) => void) {
+  tokenListeners.add(fn);
+  return () => tokenListeners.delete(fn);
+}
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+/** Exchanges the refresh cookie for a new access token. Concurrent callers share one request. */
+export function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const call = () =>
+          fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+          });
+        let res = await call();
+        if (res.status === 409) {
+          // Another tab rotated the cookie a moment ago; it now holds the new token. Retry once.
+          await new Promise((r) => setTimeout(r, 400));
+          res = await call();
+        }
+        if (!res.ok) {
+          setAccessToken(null);
+          return null;
+        }
+        const body = (await res.json().catch(() => ({}))) as { accessToken?: string };
+        setAccessToken(body.accessToken ?? null);
+        return body.accessToken ?? null;
+      } catch {
+        // Network error: keep the current token, the caller will surface the failure
+        return null;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+const RETRY_CODES = new Set(["ACCESS_TOKEN_EXPIRED", "ACCESS_TOKEN_INVALID", "AUTHENTICATION_REQUIRED", "INVALID_SESSION"]);
+// These never need a refresh-and-retry (they are how you get or drop a session).
+const NO_RETRY_PATHS = ["/auth/login", "/auth/verify-2fa", "/auth/refresh", "/auth/logout", "/auth/register"];
+
+async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+  const { headers, ...rest } = options;
   const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...rest,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(headers || {}),
     },
-    ...options,
   });
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
   const body = isJson ? await res.json().catch(() => ({})) : undefined;
 
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      !isRetry &&
+      RETRY_CODES.has(body?.code) &&
+      !NO_RETRY_PATHS.some((p) => path.startsWith(p))
+    ) {
+      const fresh = await refreshAccessToken();
+      if (fresh) return request<T>(path, options, true);
+    }
     throw new ApiError(body?.message || "Something went wrong. Please try again.", res.status, body?.code);
   }
   return body as T;
@@ -87,6 +159,12 @@ export type AuthUser = {
   createdAt: string;
 };
 
+/** Saves the access token from a login-style response (if present). */
+function storeToken<T extends { accessToken?: string }>(res: T): T {
+  if (res.accessToken) setAccessToken(res.accessToken);
+  return res;
+}
+
 export const authApi = {
   register: (payload: Record<string, unknown>) =>
     api.post<{ message: string; user: AuthUser; emailSent: boolean }>("/auth/register", payload),
@@ -94,23 +172,25 @@ export const authApi = {
     api.get<{ message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`),
   resendVerification: (email: string) => api.post<{ message: string }>("/auth/resend-verification", { email }),
   login: (email: string, password: string) =>
-    api.post<{ message: string; user?: AuthUser; requiresTwoFactor?: boolean; email?: string }>("/auth/login", {
-      email,
-      password,
-    }),
+    api.post<{ message: string; user?: AuthUser; requiresTwoFactor?: boolean; email?: string; accessToken?: string }>("/auth/login", { email, password },).then(storeToken),
   verifyTwoFactor: (email: string, otp: string) =>
-    api.post<{ message: string; user: AuthUser }>("/auth/verify-2fa", { email, otp }),
+    api.post<{ message: string; user: AuthUser; accessToken?: string }>("/auth/verify-2fa", { email, otp }).then(storeToken),
   toggleTwoFactor: () => api.post<{ message: string; twoFactorEnabled: boolean }>("/auth/toggle-2fa"),
-  logout: () => api.post<{ message: string }>("/auth/logout"),
+  logout: () =>
+    api.post<{ message: string }>("/auth/logout").finally(() => setAccessToken(null)),
+  logoutAll: () =>
+    api.post<{ message: string }>("/auth/logout-all").finally(() => setAccessToken(null)),
   me: () => api.get<{ user: AuthUser }>("/auth/me"),
   switchRole: (role: "customer" | "provider") =>
     api.post<{ message: string; user: AuthUser }>("/auth/switch-role", { role }),
   forgotPassword: (email: string) => api.post<{ message: string }>("/auth/forgot-password", { email }),
   resetPassword: (token: string, email: string, newPassword: string) =>
-    api.post<{ message: string }>("/auth/reset-password", { token, email, newPassword }),
+    api.post<{ message: string }>("/auth/reset-password", { token, email, newPassword }).then((r) => {
+      setAccessToken(null); return r;
+    }),     // every session was revoked server-side
   updateAvatar: (avatar: string) => api.patch<{ message: string; user: AuthUser }>("/auth/avatar", { avatar }),
   changePassword: (currentPassword: string, newPassword: string) =>
-    api.post<{ message: string }>("/auth/change-password", { currentPassword, newPassword }),
+    api.post<{ message: string; accessToken?: string }>("/auth/change-password", { currentPassword, newPassword }).then(storeToken), // other devices are signed out; this one gets a fresh token
   sessions: () => api.get<{ sessions: SessionItem[] }>("/auth/sessions"),
   revokeSession: (id: string) => api.delete<{ message: string }>(`/auth/sessions/${id}`),
   updateProfile: (payload: { name: string; phoneNumber?: string; state?: string; city?: string }) =>
@@ -242,6 +322,30 @@ export type VerificationRequestItem = {
   createdAt: string;
 };
 
+export const verificationApi = {
+  submit: (payload: { workImages: string[]; notes?: string; preferredSlots?: string[] }) =>
+    api.post<{ message: string; request: VerificationRequestItem }>("/verification/requests", payload),
+  mine: () => api.get<{ request: VerificationRequestItem | null }>("/verification/requests/me"),
+  payBadgeFee: (id: string) =>
+    api.post<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/pay-badge-fee`),
+  // admin
+  list: (status?: VerificationStatus) =>
+    api.get<{ requests: VerificationRequestItem[] }>(`/verification/requests${status ? `?status=${status}` : ""}`),
+  scheduleCall: (id: string, scheduledCallAt: string, callMeetingLink?: string) =>
+    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/schedule-call`, {
+      scheduledCallAt,
+      callMeetingLink,
+    }),
+  completeCall: (id: string) =>
+    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/complete-call`),
+  decide: (id: string, decision: "approve" | "reject", adminNotes?: string, requireBadgeFee?: boolean) =>
+    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/decide`, {
+      decision,
+      adminNotes,
+      requireBadgeFee,
+    }),
+};
+
 // --- Payments ---
 export type PaymentPurpose = "provider_slot" | "recommendation_fee" | "booking_payment" | "verification_badge";
 export type PaymentGateway = "paystack" | "flutterwave";
@@ -346,30 +450,6 @@ export const reviewApi = {
   // admin
   adminList: () => api.get<{ reviews: ReviewItem[] }>("/reviews/admin/all"),
   remove: (id: string) => api.delete<{ message: string }>(`/reviews/${id}`),
-};
-
-export const verificationApi = {
-  submit: (payload: { workImages: string[]; notes?: string; preferredSlots?: string[] }) =>
-    api.post<{ message: string; request: VerificationRequestItem }>("/verification/requests", payload),
-  mine: () => api.get<{ request: VerificationRequestItem | null }>("/verification/requests/me"),
-  payBadgeFee: (id: string) =>
-    api.post<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/pay-badge-fee`),
-  // admin
-  list: (status?: VerificationStatus) =>
-    api.get<{ requests: VerificationRequestItem[] }>(`/verification/requests${status ? `?status=${status}` : ""}`),
-  scheduleCall: (id: string, scheduledCallAt: string, callMeetingLink?: string) =>
-    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/schedule-call`, {
-      scheduledCallAt,
-      callMeetingLink,
-    }),
-  completeCall: (id: string) =>
-    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/complete-call`),
-  decide: (id: string, decision: "approve" | "reject", adminNotes?: string, requireBadgeFee?: boolean) =>
-    api.patch<{ message: string; request: VerificationRequestItem }>(`/verification/requests/${id}/decide`, {
-      decision,
-      adminNotes,
-      requireBadgeFee,
-    }),
 };
 
 // --- Admin ---

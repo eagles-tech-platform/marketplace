@@ -7,6 +7,11 @@ const config: CapacitorConfig = {
   plugins: {
   CapacitorHttp: { enabled: true },
   CapacitorCookies: { enabled: true },
+  server: {
+    androidScheme: 'https',
+    url: 'https://marketplace-0399.onrender.com',
+    cleartext: false,
+  },
 },
 };
 

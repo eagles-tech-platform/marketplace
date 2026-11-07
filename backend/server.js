@@ -6,6 +6,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
+const csrfOrigin = require("./middleware/csrfOrigin");
 const connectDB = require("./config/db");
 const { initSocket } = require("./socket");
 
@@ -57,6 +58,7 @@ const corsOptions = {
 // crossOriginResourcePolicy "cross-origin" lets your frontend display uploaded images
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors(corsOptions));
+app.use("/api", csrfOrigin); // Origin must match CLIENT_URL on state-changing requests
 
 // rawBody is needed for Paystack webhook signature verification
 app.use(

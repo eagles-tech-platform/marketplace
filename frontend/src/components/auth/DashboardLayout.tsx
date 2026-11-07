@@ -9,6 +9,7 @@ import { SidebarInset,
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import NotificationBell from "../NotificationBell";
+import { useEffect } from "react";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -19,6 +20,10 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children, role, title }: DashboardLayoutProps) {
   const { user } = useAuth();
 
+  useEffect(() => {
+    document.title =  `${title}| Quantum MarketPlace`;
+  }, [title]);
+  
   return (
     <SidebarProvider>
       <AppSidebar role={role} />

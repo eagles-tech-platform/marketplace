@@ -89,7 +89,13 @@ async function persistMessage({ roomId, senderId, content, attachmentUrl }) {
   if (!room.participants.some((p) => String(p) === String(senderId))) {
     throw new Error("You're not part of this conversation.");
   }
-  if (!content && !attachmentUrl) {
+  if (typeof content !== "string" || content.length > 5000) {
+    throw new Error("Message must be 5,000 characters or fewer.");
+  }
+  if (typeof attachmentUrl !== "undefined" && (typeof attachmentUrl !== "string" || attachmentUrl.length > 2048)) {
+    throw new Error("Invalid attachment URL.");
+  }
+  if (!content.trim() && !attachmentUrl) {
     throw new Error("Message can't be empty.");
   }
 
@@ -107,15 +113,20 @@ async function persistMessage({ roomId, senderId, content, attachmentUrl }) {
 
   const otherParticipant = room.participants.find((p) => String(p) !== String(senderId));
   if (otherParticipant) {
-    const recipient = await User.findById(otherParticipant).select("activeRole");
-    const chatPath = recipient?.activeRole === "provider" ? "/provider/chat" : "/dashboard/chat";
-    await notify({
-      userId: otherParticipant,
-      type: "chat",
-      title: "New message",
-      message: content ? content.slice(0, 80) : "Sent an attachment",
-      link: `${chatPath}?room=${room._id}`,
-    });
+    try {
+      const recipient = await User.findById(otherParticipant).select("activeRole");
+      const chatPath = recipient?.activeRole === "provider" ? "/provider/chat" : "/dashboard/chat";
+      await notify({
+        userId: otherParticipant,
+        type: "chat",
+        title: "New message",
+        message: content ? content.slice(0, 80) : "Sent an attachment",
+        link: `${chatPath}?room=${room._id}`,
+      });
+    } catch (notifyError) {
+      // A notification outage must not make a persisted chat message look unsent.
+      console.error("[chat] notification failed:", notifyError.message);
+    }
   }
 
   return message;

@@ -1,10 +1,21 @@
 const crypto = require("crypto");
-const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const User = require("../models/User");
-const Session = require("../models/Session");
 const LoginAttempt = require("../models/LoginAttempt");
 const { enrollNewUser } = require("./subscriptionController");
-const { sendTokenCookie, clearTokenCookie } = require("../utils/generateToken");
+const {
+  COOKIE_NAME,
+  cookieOptions,
+  signAccessToken,
+  createRefreshSession,
+  rotateRefreshSession,
+  revokeRefreshToken,
+  revokeAllUserSessions,
+  hashRefreshToken,
+  configureUserLookup,
+} = require("../services/tokenService");
+
+const RefreshSession = require("../models/RefreshSession");
 const {
   sendEmail,
   verificationEmailTemplate,
@@ -13,6 +24,29 @@ const {
 } = require("../utils/sendEmail");
 
 const CLIENT_URL = () => process.env.CLIENT_URL;
+
+configureUserLookup((id) =>
+  User.findById(id).select("_id email activeRole isAdmin isActive disabled isEmailVerified")
+);
+
+function setRefreshCookie(res, token) {
+  res.cookie(COOKIE_NAME, token, cookieOptions());
+}
+
+function clearRefreshCookie(res) {
+  res.clearCookie(COOKIE_NAME, cookieOptions());
+}
+
+async function issueAuthTokens(user, req, res) {
+  const refresh = await createRefreshSession(user, req);
+  setRefreshCookie(res, refresh.rawToken);
+
+  return {
+    accessToken: signAccessToken(user),
+    tokenType: "Bearer",
+    expiresIn: process.env.JWT_ACCESS_TTL || "15m",
+  };
+}
 
 function requestMeta(req) {
   return { ip: req.ip || "", userAgent: req.headers["user-agent"] || "" };
@@ -173,59 +207,52 @@ async function resendVerification(req, res) {
 // POST /api/auth/login
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required." });
-    }
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const { password } = req.body;
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+    if (!email || !password) return res.status(400).json({ message: "Email and password are required.",});
+  
+    const user = await User.findOne({ email }).select("+password");
+
     if (!user || !(await user.comparePassword(password))) {
-      await logAttempt({ email, user, success: false, reason: "invalid_credentials", req });
-      return res.status(401).json({ message: "Invalid email or password." });
+      await logAttempt({ email, user, success: false, reason: "invalid_credentials", req, });
+      return res.status(401).json({ message: "Invalid email or password.", });
     }
     if (!user.isActive) {
-      await logAttempt({ email, user, success: false, reason: "account_deactivated", req });
-      return res.status(403).json({ message: "This account has been deactivated. Contact support." });
+      await logAttempt({ email, user, success: false, reason: "account_deactivated", req, });
+      return res.status(403).json({ message: "This account has been deactivated. Contact support.", });
     }
     if (!user.isEmailVerified) {
-      await logAttempt({ email, user, success: false, reason: "not_verified", req });
-      return res.status(403).json({
-        message: "Please verify your email before logging in.",
-        code: "EMAIL_NOT_VERIFIED",
-      });
+      await logAttempt({ email, user, success: false, reason: "not_verified", req,});
+      return res.status(403).json({ message: "Please verify your email before logging in.", code: "EMAIL_NOT_VERIFIED", });
     }
 
+    // Preserve existing two-factor authentication.
     if (user.twoFactorEnabled) {
       const otp = user.generateTwoFactorOTP();
       await user.save();
+
       try {
-        await sendEmail({
-          to: user.email,
-          subject: "Your MARKET PLACE login code",
+        await sendEmail({ to: user.email,subject: "Your MARKET PLACE login code",
           html: otpEmailTemplate({ name: user.name, otp }),
         });
       } catch (mailErr) {
         console.error("[auth] Failed to send 2FA OTP email:", mailErr.message);
-        return res.status(500).json({ message: "Could not send your login code. Try again shortly." });
+        return res.status(500).json({ message: "Could not send your login code. Try again shortly.",});
       }
-      // Not a completed login yet — the real success/session gets logged
-      // once verifyTwoFactor succeeds, not here.
-      return res.json({
-        message: "A login code has been sent to your email.",
-        requiresTwoFactor: true,
-        email: user.email,
-      });
+
+      return res.json({ message: "A login code has been sent to your email.", requiresTwoFactor: true, email: user.email });
     }
 
-    // No 2FA — log in directly
-    await sendTokenCookie(res, user._id, req);
+    // Issue access token and rotating refresh cookie.
+    const tokens = await issueAuthTokens(user, req, res);
     user.lastLoginAt = new Date();
     await user.save();
-    await logAttempt({ email, user, success: true, reason: "success", req });
-    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON() });
+    await logAttempt({ email, user, success: true, reason: "success", req,});
+    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON(), ...tokens, });
   } catch (err) {
     console.error("[auth] login error:", err);
-    return res.status(500).json({ message: "Something went wrong logging in." });
+    return res.status(500).json({ message: "Something went wrong logging in.", });
   }
 }
 
@@ -253,9 +280,9 @@ async function verifyTwoFactor(req, res) {
     user.lastLoginAt = new Date();
     await user.save();
 
-    await sendTokenCookie(res, user._id, req);
+    const tokens = await issueAuthTokens(user, req, res);
     await logAttempt({ email, user, success: true, reason: "success_2fa", req });
-    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON() });
+    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON(), ...tokens });
   } catch (err) {
     console.error("[auth] verifyTwoFactor error:", err);
     return res.status(500).json({ message: "Could not verify code." });
@@ -277,25 +304,64 @@ async function toggleTwoFactor(req, res) {
   }
 }
 
-// POST /api/auth/logout
+// POST /api/auth/refresh — consumes the HttpOnly refresh cookie, rotates it,
+// and returns a new short-lived access token.
+async function refresh(req, res) {
+  try {
+    const rawToken = req.cookies?.[COOKIE_NAME];
+    if (!rawToken) {
+      return res.status(401).json({ message: "Refresh token missing.", code: "REFRESH_MISSING" });
+    }
+    const result = await rotateRefreshSession(rawToken, req);
+    const user = await User.findById(result.user._id);
+    if (!user || user.isActive === false || user.disabled === true) {
+      await revokeRefreshToken(result.rawToken);
+      clearRefreshCookie(res);
+      return res.status(401).json({ message: "Account is unavailable.", code: "ACCOUNT_UNAVAILABLE" });
+    }
+    setRefreshCookie(res, result.rawToken);
+    return res.json({
+      accessToken: signAccessToken(user),
+      tokenType: "Bearer",
+      expiresIn: process.env.JWT_ACCESS_TTL || "15m",
+      user: user.toSafeJSON(),
+    });
+  } catch (err) {
+    if (err.code === "REFRESH_RACE") {
+      // Benign multi-tab race: keep the cookie (it was just rotated) and let the client retry.
+      return res.status(409).json({ message: err.message, code: "REFRESH_RACE" });
+    }
+    clearRefreshCookie(res);
+    if (["REFRESH_REUSE", "REFRESH_INVALID", "ACCOUNT_UNAVAILABLE"].includes(err.code)) {
+      return res.status(401).json({ message: err.message, code: err.code });
+    }
+    console.error("[auth] refresh error:", err);
+    return res.status(500).json({ message: "Could not refresh your session." });
+  }
+}
+
+// POST /api/auth/logout — revokes this device's refresh token
 async function logout(req, res) {
   try {
-    const cookieName = process.env.JWT_COOKIE_NAME || "mp_token";
-    const token = req.cookies?.[cookieName];
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        if (decoded.jti) {
-          await Session.findOneAndUpdate({ jti: decoded.jti }, { revokedAt: new Date() });
-        }
-      } catch {
-        // token already invalid/expired — nothing to revoke, still clear the cookie below
-      }
-    }
+    await revokeRefreshToken(req.cookies?.[COOKIE_NAME]);
+  } catch (err) {
+    console.error("[auth] logout error:", err);
   } finally {
-    clearTokenCookie(res);
+    clearRefreshCookie(res);
   }
   return res.json({ message: "Logged out successfully." });
+}
+
+// POST /api/auth/logout-all  (requires auth) — signs out every device
+async function logoutAll(req, res) {
+  try {
+    await revokeAllUserSessions(req.user._id);
+    clearRefreshCookie(res);
+    return res.json({ message: "Signed out on all devices." });
+  } catch (err) {
+    console.error("[auth] logoutAll error:", err);
+    return res.status(500).json({ message: "Could not sign out all devices." });
+  }
 }
 
 // POST /api/auth/change-password  (requires auth) — current password required
@@ -314,25 +380,40 @@ async function changePassword(req, res) {
     }
     user.password = newPassword;
     await user.save();
-    return res.json({ message: "Password changed successfully." });
+    // Sign out every device, then keep THIS device signed in with fresh tokens.
+    await revokeAllUserSessions(user._id);
+    const tokens = await issueAuthTokens(user, req, res);
+    return res.json({
+      message: "Password changed successfully. Other devices have been signed out.",
+      ...tokens,
+    });
   } catch (err) {
     console.error("[auth] changePassword error:", err);
     return res.status(500).json({ message: "Could not change password." });
   }
 }
 
-// GET /api/auth/sessions  (requires auth) — this user's active devices/sessions
+// GET /api/auth/sessions  (requires auth) — this user's signed-in devices.
+// Each device is one refresh "family"; exactly one live row exists per family.
 async function getSessions(req, res) {
   try {
-    const sessions = await Session.find({ user: req.user._id, revokedAt: null }).sort({ lastSeenAt: -1 });
+    const currentRaw = req.cookies?.[COOKIE_NAME];
+    const currentHash = currentRaw ? hashRefreshToken(currentRaw) : null;
+    const sessions = await RefreshSession.find({
+      userId: req.user._id,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() },
+    })
+      .select("+tokenHash")
+      .sort({ updatedAt: -1 });
     return res.json({
       sessions: sessions.map((s) => ({
         id: s._id,
-        ip: s.ip,
+        ip: s.ipAddress,
         userAgent: s.userAgent,
-        lastSeenAt: s.lastSeenAt,
+        lastSeenAt: s.updatedAt,
         createdAt: s.createdAt,
-        isCurrent: s.jti === req.sessionJti,
+        isCurrent: !!currentHash && s.tokenHash === currentHash,
       })),
     });
   } catch (err) {
@@ -341,13 +422,18 @@ async function getSessions(req, res) {
   }
 }
 
-// DELETE /api/auth/sessions/:id  (requires auth) — sign out one specific device
+// DELETE /api/auth/sessions/:id  (requires auth) — sign out one device
 async function revokeSession(req, res) {
   try {
-    const session = await Session.findOne({ _id: req.params.id, user: req.user._id });
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(404).json({ message: "Session not found." });
+    }
+    const session = await RefreshSession.findOne({ _id: req.params.id, userId: req.user._id });
     if (!session) return res.status(404).json({ message: "Session not found." });
-    session.revokedAt = new Date();
-    await session.save();
+    await RefreshSession.updateMany(
+      { familyId: session.familyId, revokedAt: null },
+      { $set: { revokedAt: new Date() } }
+    );
     return res.json({ message: "Device signed out." });
   } catch (err) {
     console.error("[auth] revokeSession error:", err);
@@ -434,8 +520,9 @@ async function resetPassword(req, res) {
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save();
+    await revokeAllUserSessions(user._id);
 
-    return res.json({ message: "Password reset successfully. You can now log in." });
+    return res.json({ message: "Password reset successfully. All devices were signed out; please log in again." });
   } catch (err) {
     console.error("[auth] resetPassword error:", err);
     return res.status(500).json({ message: "Could not reset password." });
@@ -523,7 +610,9 @@ module.exports = {
   login,
   verifyTwoFactor,
   toggleTwoFactor,
+  refresh,
   logout,
+  logoutAll,
   getMe,
   switchRole,
   forgotPassword,

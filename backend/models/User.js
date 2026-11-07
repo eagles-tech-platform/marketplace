@@ -85,6 +85,8 @@ const userSchema = new mongoose.Schema(
     passwordResetExpires: { type: Date, select: false },
 
     isActive: { type: Boolean, default: true },
+    disabled: { type: Boolean, default: false },
+
     lastLoginAt: { type: Date },
   },
   { timestamps: true }
@@ -143,6 +145,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     ratingAvg: this.ratingAvg,
     ratingCount: this.ratingCount,
     isActive: this.isActive,
+    disabled: this.disabled,
     avatar: this.avatar,
     trialBookingsRemaining: this.trialBookingsRemaining,
     isEmailVerified: this.isEmailVerified,

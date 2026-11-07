@@ -7,7 +7,9 @@ const {
   login,
   verifyTwoFactor,
   toggleTwoFactor,
+  refresh,
   logout,
+  logoutAll,
   getMe,
   switchRole,
   forgotPassword,
@@ -37,7 +39,9 @@ router.post("/verify-2fa", authLimiter, verifyTwoFactor);
 router.post("/forgot-password", authLimiter, forgotPassword);
 router.post("/reset-password", authLimiter, resetPassword);
 
+router.post("/refresh", refresh);
 router.post("/logout", logout);
+router.post("/logout-all", protect, logoutAll);
 router.get("/me", protect, getMe);
 router.post("/switch-role", protect, switchRole);
 router.patch("/avatar", protect, updateAvatar);

@@ -135,8 +135,11 @@ async function getDashboardSummary(req, res) {
       categoryAgg,
     ] = await Promise.all([
       User.countDocuments(),
-      User.countDocuments({ canBeCustomer: true }),
-      User.countDocuments({ canBeProvider: true, providerApprovalStatus: "approved" }),
+      // Mutually exclusive account types so the buckets add up to totalUsers:
+      // every account starts as a customer, so "canBeCustomer" alone would also
+      // count admins and providers.
+      User.countDocuments({ isAdmin: { $ne: true }, $nor: [{ canBeProvider: true, providerApprovalStatus: "approved" }] }),
+      User.countDocuments({ isAdmin: { $ne: true }, canBeProvider: true, providerApprovalStatus: "approved" }),
       User.countDocuments({ isAdmin: true }),
       User.countDocuments({ canBeProvider: true, providerApprovalStatus: "pending" }),
       Booking.countDocuments({ status: { $in: ["pending", "confirmed", "in_progress"] } }),
