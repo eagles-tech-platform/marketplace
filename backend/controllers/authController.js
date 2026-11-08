@@ -14,7 +14,7 @@ const {
   hashRefreshToken,
   configureUserLookup,
 } = require("../services/tokenService");
-
+const { getRefreshPepper } = require("../config/jwtKeyring");
 const RefreshSession = require("../models/RefreshSession");
 const {
   sendEmail,
@@ -25,27 +25,33 @@ const {
 
 const CLIENT_URL = () => process.env.CLIENT_URL;
 
-configureUserLookup((id) =>
-  User.findById(id).select("_id email activeRole isAdmin isActive disabled isEmailVerified")
-);
+configureUserLookup((id, options = {}) => {
+  const query = User.findById(id).select("_id email activeRole isAdmin isActive disabled isEmailVerified");
+  if (options.session) { query.session(options.session); }
+  return query;
+});
 
 function setRefreshCookie(res, token) {
   res.cookie(COOKIE_NAME, token, cookieOptions());
 }
 
 function clearRefreshCookie(res) {
-  res.clearCookie(COOKIE_NAME, cookieOptions());
+  const options = cookieOptions();
+  delete options.maxAge;
+  res.clearCookie(COOKIE_NAME, options);
 }
 
 async function issueAuthTokens(user, req, res) {
+  // Generate the access token for the authenticated user.
+  const accessToken = signAccessToken(user);
+  // Validate refresh-token configuration and cookie settings.
+  getRefreshPepper();
+  const options = cookieOptions();
+  // Create a new refresh session.
   const refresh = await createRefreshSession(user, req);
-  setRefreshCookie(res, refresh.rawToken);
-
-  return {
-    accessToken: signAccessToken(user),
-    tokenType: "Bearer",
-    expiresIn: process.env.JWT_ACCESS_TTL || "15m",
-  };
+  // Store the refresh token in an HttpOnly cookie.
+  res.cookie(COOKIE_NAME, refresh.rawToken, options);
+  return { accessToken, tokenType: "Bearer", expiresIn: process.env.JWT_ACCESS_TTL || "15m" };
 }
 
 function requestMeta(req) {
@@ -210,8 +216,8 @@ async function login(req, res) {
     const email = String(req.body.email || "").trim().toLowerCase();
     const { password } = req.body;
 
-    if (!email || !password) return res.status(400).json({ message: "Email and password are required.",});
-  
+    if (!email || !password) return res.status(400).json({ message: "Email and password are required.", });
+
     const user = await User.findOne({ email }).select("+password");
 
     if (!user || !(await user.comparePassword(password))) {
@@ -223,7 +229,7 @@ async function login(req, res) {
       return res.status(403).json({ message: "This account has been deactivated. Contact support.", });
     }
     if (!user.isEmailVerified) {
-      await logAttempt({ email, user, success: false, reason: "not_verified", req,});
+      await logAttempt({ email, user, success: false, reason: "not_verified", req, });
       return res.status(403).json({ message: "Please verify your email before logging in.", code: "EMAIL_NOT_VERIFIED", });
     }
 
@@ -233,23 +239,30 @@ async function login(req, res) {
       await user.save();
 
       try {
-        await sendEmail({ to: user.email,subject: "Your MARKET PLACE login code",
+        await sendEmail({
+          to: user.email, subject: "Your MARKET PLACE login code",
           html: otpEmailTemplate({ name: user.name, otp }),
         });
       } catch (mailErr) {
         console.error("[auth] Failed to send 2FA OTP email:", mailErr.message);
-        return res.status(500).json({ message: "Could not send your login code. Try again shortly.",});
+        return res.status(500).json({ message: "Could not send your login code. Try again shortly.", });
       }
 
       return res.json({ message: "A login code has been sent to your email.", requiresTwoFactor: true, email: user.email });
     }
 
-    // Issue access token and rotating refresh cookie.
-    const tokens = await issueAuthTokens(user, req, res);
+    // Validate authentication configuration before changing login state.
+    signAccessToken(user);
+    getRefreshPepper();
+    cookieOptions();
+
+    // Record successful authentication.
     user.lastLoginAt = new Date();
     await user.save();
-    await logAttempt({ email, user, success: true, reason: "success", req,});
-    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON(), ...tokens, });
+    // Issue tokens only after the account update succeeds.
+    const tokens = await issueAuthTokens(user, req, res);
+    await logAttempt({ email, user, success: true, reason: "success", req });
+    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON(), ...tokens });
   } catch (err) {
     console.error("[auth] login error:", err);
     return res.status(500).json({ message: "Something went wrong logging in.", });
@@ -260,32 +273,90 @@ async function login(req, res) {
 async function verifyTwoFactor(req, res) {
   try {
     const { email, otp } = req.body;
+
     if (!email || !otp) {
-      return res.status(400).json({ message: "Email and code are required." });
+      return res.status(400).json({
+        message: "Email and code are required."
+      });
     }
-    const hashed = crypto.createHash("sha256").update(otp).digest("hex");
+
+    const hashed = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
+
     const user = await User.findOne({
       email: email.toLowerCase(),
       twoFactorOTP: hashed,
-      twoFactorOTPExpires: { $gt: Date.now() },
+      twoFactorOTPExpires: { $gt: Date.now() }
     }).select("+twoFactorOTP +twoFactorOTPExpires");
 
     if (!user) {
-      await logAttempt({ email, success: false, reason: "invalid_2fa_code", req });
-      return res.status(400).json({ message: "Invalid or expired code." });
+      await logAttempt({
+        email,
+        success: false,
+        reason: "invalid_2fa_code",
+        req
+      });
+
+      return res.status(400).json({
+        message: "Invalid or expired code."
+      });
     }
 
+    // Check account status before accepting the OTP.
+    if (
+      !user.isActive ||
+      user.disabled === true ||
+      !user.isEmailVerified
+    ) {
+      await logAttempt({
+        email,
+        user,
+        success: false,
+        reason: "account_unavailable",
+        req
+      });
+
+      return res.status(403).json({
+        message: "This account is unavailable. Contact support."
+      });
+    }
+
+    // Validate authentication configuration before consuming OTP.
+    signAccessToken(user);
+    getRefreshPepper();
+    cookieOptions();
+
+    // Consume the OTP after successful verification.
     user.twoFactorOTP = undefined;
     user.twoFactorOTPExpires = undefined;
     user.lastLoginAt = new Date();
+
     await user.save();
 
     const tokens = await issueAuthTokens(user, req, res);
-    await logAttempt({ email, user, success: true, reason: "success_2fa", req });
-    return res.json({ message: "Logged in successfully.", user: user.toSafeJSON(), ...tokens });
+
+    await logAttempt({
+      email,
+      user,
+      success: true,
+      reason: "success_2fa",
+      req
+    });
+
+    return res.json({
+      message: "Logged in successfully.",
+      user: user.toSafeJSON(),
+      ...tokens
+    });
+
   } catch (err) {
     console.error("[auth] verifyTwoFactor error:", err);
-    return res.status(500).json({ message: "Could not verify code." });
+
+    return res.status(500).json({
+      message: "Could not verify code."
+    });
   }
 }
 
@@ -309,43 +380,70 @@ async function toggleTwoFactor(req, res) {
 async function refresh(req, res) {
   try {
     const rawToken = req.cookies?.[COOKIE_NAME];
+
     if (!rawToken) {
-      return res.status(401).json({ message: "Refresh token missing.", code: "REFRESH_MISSING" });
+      clearRefreshCookie(res);
+
+      return res.status(401).json({
+        message: "Refresh token missing.",
+        code: "REFRESH_MISSING"
+      });
     }
+
+    // Rotate the refresh token and obtain the new access token.
     const result = await rotateRefreshSession(rawToken, req);
-    const user = await User.findById(result.user._id);
+    const user = result.user;
+
     if (!user || user.isActive === false || user.disabled === true) {
       await revokeRefreshToken(result.rawToken);
       clearRefreshCookie(res);
-      return res.status(401).json({ message: "Account is unavailable.", code: "ACCOUNT_UNAVAILABLE" });
+
+      return res.status(401).json({
+        message: "Account is unavailable.",
+        code: "ACCOUNT_UNAVAILABLE"
+      });
     }
-    setRefreshCookie(res, result.rawToken);
+
+    // Reuse the access token generated by tokenService.
+    const accessToken = result.accessToken;
+
+    // Store the replacement refresh token.
+    res.cookie(COOKIE_NAME, result.rawToken, cookieOptions());
+
     return res.json({
-      accessToken: signAccessToken(user),
+      accessToken,
       tokenType: "Bearer",
       expiresIn: process.env.JWT_ACCESS_TTL || "15m",
-      user: user.toSafeJSON(),
+      user: user.toSafeJSON()
     });
+
   } catch (err) {
-    if (err.code === "REFRESH_RACE") {
-      // Benign multi-tab race: keep the cookie (it was just rotated) and let the client retry.
-      return res.status(409).json({ message: err.message, code: "REFRESH_RACE" });
+    if (
+      ["REFRESH_REUSE", "REFRESH_INVALID", "ACCOUNT_UNAVAILABLE"].includes(err.code)
+    ) {
+      clearRefreshCookie(res);
+
+      return res.status(401).json({
+        message: err.message,
+        code: err.code
+      });
     }
-    clearRefreshCookie(res);
-    if (["REFRESH_REUSE", "REFRESH_INVALID", "ACCOUNT_UNAVAILABLE"].includes(err.code)) {
-      return res.status(401).json({ message: err.message, code: err.code });
-    }
+
     console.error("[auth] refresh error:", err);
-    return res.status(500).json({ message: "Could not refresh your session." });
+
+    return res.status(500).json({
+      message: "Could not refresh your session."
+    });
   }
 }
 
 // POST /api/auth/logout — revokes this device's refresh token
 async function logout(req, res) {
   try {
-    await revokeRefreshToken(req.cookies?.[COOKIE_NAME]);
+    const rawToken = req.cookies?.[COOKIE_NAME];
+    if (rawToken) await revokeRefreshToken(rawToken);
   } catch (err) {
-    console.error("[auth] logout error:", err);
+    console.error("[auth] logout error:", err.message);
   } finally {
     clearRefreshCookie(res);
   }
@@ -356,11 +454,12 @@ async function logout(req, res) {
 async function logoutAll(req, res) {
   try {
     await revokeAllUserSessions(req.user._id);
-    clearRefreshCookie(res);
     return res.json({ message: "Signed out on all devices." });
   } catch (err) {
     console.error("[auth] logoutAll error:", err);
     return res.status(500).json({ message: "Could not sign out all devices." });
+  } finally {
+    clearRefreshCookie(res);
   }
 }
 
@@ -369,27 +468,32 @@ async function changePassword(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: "Current and new password are required." });
+      return res.status(400).json({message: "Current and new passwords are required."});
     }
     if (newPassword.length < 8) {
-      return res.status(400).json({ message: "New password must be at least 8 characters." });
+      return res.status(400).json({message: "New password must be at least 8 characters."});
     }
     const user = await User.findById(req.user._id).select("+password");
-    if (!(await user.comparePassword(currentPassword))) {
-      return res.status(401).json({ message: "Current password is incorrect." });
+    if (!user || !(await user.comparePassword(currentPassword))) {
+      return res.status(401).json({ message: "Current password is incorrect."});
     }
+    // Validate authentication configuration first.
+    signAccessToken(user);
+    getRefreshPepper();
+    cookieOptions();
+    // Preserve existing User model password hashing middleware.
     user.password = newPassword;
     await user.save();
-    // Sign out every device, then keep THIS device signed in with fresh tokens.
+    // Invalidate all previous devices.
     await revokeAllUserSessions(user._id);
+    // Issue fresh credentials for the current device.
     const tokens = await issueAuthTokens(user, req, res);
-    return res.json({
-      message: "Password changed successfully. Other devices have been signed out.",
-      ...tokens,
-    });
+    return res.json({message: "Password changed successfully. Other devices have been signed out.", ...tokens});
   } catch (err) {
     console.error("[auth] changePassword error:", err);
-    return res.status(500).json({ message: "Could not change password." });
+    return res.status(500).json({
+      message: "Could not change password."
+    });
   }
 }
 
@@ -398,40 +502,57 @@ async function changePassword(req, res) {
 async function getSessions(req, res) {
   try {
     const currentRaw = req.cookies?.[COOKIE_NAME];
-    const currentHash = currentRaw ? hashRefreshToken(currentRaw) : null;
+    const currentHash = currentRaw
+      ? hashRefreshToken(currentRaw)
+      : null;
+
     const sessions = await RefreshSession.find({
       userId: req.user._id,
       revokedAt: null,
-      expiresAt: { $gt: new Date() },
+      expiresAt: { $gt: new Date() }
     })
-      .select("+tokenHash")
-      .sort({ updatedAt: -1 });
+      .select("+tokenHash -replacedByHash")
+      .sort({ updatedAt: -1 })
+      .lean();
+
     return res.json({
-      sessions: sessions.map((s) => ({
-        id: s._id,
-        ip: s.ipAddress,
-        userAgent: s.userAgent,
-        lastSeenAt: s.updatedAt,
-        createdAt: s.createdAt,
-        isCurrent: !!currentHash && s.tokenHash === currentHash,
-      })),
+      sessions: sessions.map((session) => ({
+        id: session._id,
+        ip: session.ipAddress,
+        userAgent: session.userAgent,
+        lastSeenAt: session.updatedAt,
+        createdAt: session.createdAt,
+        isCurrent:
+          !!currentHash &&
+          session.tokenHash === currentHash
+      }))
     });
+
   } catch (err) {
     console.error("[auth] getSessions error:", err);
-    return res.status(500).json({ message: "Could not fetch sessions." });
+
+    return res.status(500).json({
+      message: "Could not fetch sessions."
+    });
   }
 }
 
 // DELETE /api/auth/sessions/:id  (requires auth) — sign out one device
 async function revokeSession(req, res) {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(404).json({ message: "Session not found." });
-    }
-    const session = await RefreshSession.findOne({ _id: req.params.id, userId: req.user._id });
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) { return res.status(404).json({ message: "Session not found." }); }
+    const session = await RefreshSession.findOne({
+      _id: id,
+      userId: req.user._id
+    }).select("_id familyId");
     if (!session) return res.status(404).json({ message: "Session not found." });
     await RefreshSession.updateMany(
-      { familyId: session.familyId, revokedAt: null },
+      {
+        familyId: session.familyId,
+        userId: req.user._id,
+        revokedAt: null
+      },
       { $set: { revokedAt: new Date() } }
     );
     return res.json({ message: "Device signed out." });
