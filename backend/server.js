@@ -6,7 +6,11 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
-const csrfOrigin = require("./middleware/csrfOrigin");
+const {
+  csrfOrigin,
+  corsOptions,
+  allowedOrigins,
+} = require("./middleware/csrfOrigin");
 const connectDB = require("./config/db");
 const { initSocket } = require("./socket");
 
@@ -23,36 +27,20 @@ const httpServer = http.createServer(app);
 app.set("trust proxy", 1);
 const PORT = process.env.PORT;
 
-if (!PORT || !/^\d+$/.test(PORT) || Number(PORT) < 1 || Number(PORT) > 65535) {
-  throw new Error("PORT must be provided by the deployment platform or defined in .env.");
+if (
+  !PORT ||
+  !/^\d+$/.test(PORT) ||
+  Number(PORT) < 1 ||
+  Number(PORT) > 65535
+) { throw new Error("PORT must be provided by the deployment platform or defined in .env.") }
+if (process.env.NODE_ENV === "production" && allowedOrigins.size === 0) {
+  throw new Error(
+    "CLIENT_URL must contain at least one allowed frontend origin in production."
+  );
 }
-
-// CLIENT_URL supports multiple comma-separated frontend origins.
-const allowedOrigins = (process.env.CLIENT_URL || "")
-  .split(",").map((origin) => origin.trim()).filter(Boolean)
-  .map((origin) => {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      throw new Error(`Invalid CLIENT_URL origin: ${origin}`);
-    }
-  });
-
-if (allowedOrigins.length === 0) {
-  console.warn("[server] CLIENT_URL is not configured. Browser requests from other origins will not be allowed.");
-}
-
-const corsOptions = {
-  origin(origin, callback) {
-    // Allow requests without an Origin header (server-to-server calls, payment webhooks).
-    if (!origin) return callback(null, true);
-    return callback(null, allowedOrigins.includes(origin));
-  },
-  credentials: true,
-};
 
 // --------------------------------------------------
-// Security + parsing middleware
+// Security middleware
 // --------------------------------------------------
 
 // crossOriginResourcePolicy "cross-origin" lets your frontend display uploaded images
@@ -82,11 +70,11 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many requests. Please try again later." },
-  // Gateways must never be throttled
+  // Payment gateways must not be throttled by this API limiter.
   skip: (req) => req.path.startsWith("/payments/webhook/"),
 });
 
-// Failed attempts only: normal logins and session checks don't count
+// Failed authentication attempts only.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -150,9 +138,19 @@ async function startServer() {
     initSocket(httpServer);
 
     httpServer.listen(Number(PORT), "0.0.0.0", () => {
-      console.log(`[server] Marketplace backend running on port ${PORT}`);
-      console.log(`[server] Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`[server] Allowed frontend origins: ${allowedOrigins.join(", ") || "(none configured)"}`);
+      console.log("----------------------------------------");
+      console.log("[server] Quantum Marketplace API started");
+      console.log(`[server] Port: ${PORT}`);
+      console.log(
+        `[server] Environment: ${process.env.NODE_ENV || "development"}`
+      );
+      console.log(
+        `[server] Allowed origins: ${[...allowedOrigins].join(", ") || "(none configured)"
+        }`
+      );
+      console.log("[server] CORS credentials: enabled");
+      console.log("[server] CSRF origin validation: enabled");
+      console.log("----------------------------------------");
     });
   } catch (error) {
     console.error("[server] Startup failed:", error);
