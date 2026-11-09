@@ -1,16 +1,32 @@
 apply plugin: 'com.android.application'
 
-    // ---- version: one source of truth, the VERSION file in the project root (personal-guardian\VERSION) ----
-val versionFile = rootProject.file("./../VERSION")
-require(versionFile.isFile) {
-    "VERSION file not found at ${versionFile.absolutePath}" 
+// ---- Version: one source of truth, VERSION file in the project root ----
+def versionFile = rootProject.file("../VERSION")
+if (!versionFile.isFile()) {
+    throw new GradleException( "VERSION file not found at ${versionFile.absolutePath}")
 }
-val projectVersion = versionFile.readText().trim().trimStart('\uFEFF')
-
-require(Regex("""\d+\.\d+\.\d+""").matches(projectVersion)) {
-    "VERSION must look like 1.11.5 but contains '$projectVersion'"
+def projectVersion = versionFile.getText("UTF-8").trim().replaceFirst(/^\uFEFF/, "")
+// Accept three or four numeric version segments.
+// Examples: 1.1.17 or 1.1.17.0
+if (!(projectVersion ==~ /\d+(\.\d+){2,3}/)) {
+    throw new GradleException(
+        "Invalid project version: ${projectVersion}. Expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH.BUILD."
+    )
 }
-val (vMajor, vMinor, vPatch) = projectVersion.split(".").map { it.toInt() }
+// Split the version into numeric components.
+// A missing fourth component defaults to zero.
+def versionParts = projectVersion.tokenize(".").collect { it.toInteger() }
+def vMajor = versionParts[0]
+def vMinor = versionParts[1]
+def vPatch = versionParts[2]
+def vBuild = versionParts.size() > 3 ? versionParts[3] : 0
+// Android versionCode must be a positive integer.
+def androidVersionCode = (
+    vMajor * 1000000 +
+    vMinor * 10000 +
+    vPatch * 100 +
+    vBuild
+)
 
 android {
     namespace = "com.quantum.market.android"
@@ -19,7 +35,7 @@ android {
         applicationId "com.quantum.market.android"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode = vMajor * 10000 + vMinor * 100 + vPatch
+        versionCode = androidVersionCode
         versionName = projectVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
