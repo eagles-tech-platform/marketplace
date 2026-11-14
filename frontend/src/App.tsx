@@ -25,6 +25,7 @@ import HelpCenter from "./pages/HelpCenter";
 import Contact from "./pages/Contact";
 import HelpArticlePage from "./pages/HelpArticle";
 import TrackTicket from "./pages/TrackTicket";
+import SubscriptionCallback from "./pages/SubscriptionCallback";
 
 // Dashboard Pages
 import CustomerDashboard from "./pages/dashboard/CustomerDashboard";
@@ -84,7 +85,10 @@ export default function App() {
             <Route path="/help/:slug" element={<HelpArticlePage />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/support/track" element={<TrackTicket />} />
+            <Route path="/subscription/callback" element={<SubscriptionCallback />}
+/>
           </Route>
+
 
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />

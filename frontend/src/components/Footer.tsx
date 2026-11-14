@@ -14,10 +14,10 @@ import { CONTACT } from "../lib/contactInfo";
 
 // Paste your real profile URLs. Any icon with an empty href is hidden.
 const SOCIALS: { label: string; href: string; icon: ElementType }[] = [
-  { label: "Facebook", href: "", icon: Facebook },
-  { label: "Twitter", href: "", icon: Twitter },
-  { label: "Instagram", href: "", icon: Instagram },
-  { label: "LinkedIn", href: "", icon: Linkedin },
+  { label: "Facebook", href: "https://facebook.com/quantummarketplace", icon: Facebook },
+  { label: "Twitter", href: "https://twitter.com/quantummarketplace", icon: Twitter },
+  { label: "Instagram", href: "https://instagram.com/quantummarketplace", icon: Instagram },
+  { label: "LinkedIn", href: "https://linkedin.com/company/quantummarketplace", icon: Linkedin },
 ];
 
 const CUSTOMER_LINKS = [

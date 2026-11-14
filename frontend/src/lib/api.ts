@@ -591,36 +591,135 @@ export const recommendationApi = {
   getOne: (id: string) => api.get<{ request: RecommendationRequestItem }>(`/recommendations/${id}`),
 };
 
-// --- Subscriptions / Founding Member program ---
+// --- Subscriptions / Founding Member program --- section
+export type SubscriptionAudience = "customer" | "provider";
+export type BillingInterval = "monthly" | "quarterly" | "annual";
+export type SubscriptionGateway = "paystack" | "flutterwave";
+export type SubscriptionStatus =
+  | "pending"
+  | "active"
+  | "past_due"
+  | "non_renewing"
+  | "cancelled"
+  | "expired"
+  | "founding_free"
+  | "none";
+
 export type FoundingStatus = {
   claimed: number;
   totalSlots: number;
   remaining: number;
-  firstTierRemaining: number;
-  firstTierLimit: number;
-  secondTierLimit: number;
+  firstTierRemaining?: number;
+  firstTierLimit?: number;
+  secondTierLimit?: number;
 };
 
-export type SubscriptionStatus = "founding_free" | "active" | "expired" | "none";
+export type SubscriptionPlan = {
+  id: string;
+  name: string;
+  tier: "basic" | "pro";
+  role: "provider" | "customer" | "both";
+  features: string[];
+  prices: {
+    monthly: number | null;
+    quarterly: number | null;
+    annual: number | null;
+  };
+};
+
 export type MySubscription = {
   _id: string;
-  plan?: { _id: string; name: string; tier: string };
-  interval: "monthly" | "yearly";
+  user?: string;
+  audience: SubscriptionAudience;
+  plan?: { _id: string; name: string; tier: string; features?: string[] };
+  interval: BillingInterval;
   currency: "NGN" | "USD";
+  amount?: number;
+  gateway?: SubscriptionGateway;
   status: SubscriptionStatus;
-  isFoundingMember: boolean;
+  autoRenew?: boolean;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  nextPaymentDate?: string;
+  retryCount?: number;
+  lastFailureCode?: string;
+  isFoundingMember?: boolean;
   foundingMemberNumber?: number;
   freeUntil?: string;
-  currentPeriodEnd?: string;
-} | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SubscriptionPayment = {
+  _id: string;
+  amount: number;
+  currency: string;
+  provider: SubscriptionGateway;
+  status: "pending" | "success" | "failed" | "refunded";
+  reference: string;
+  createdAt: string;
+  meta?: { subscriptionId?: string; audience?: SubscriptionAudience; interval?: BillingInterval };
+};
+
+export type BillingCapabilities = {
+  recurringEnabled: boolean;
+  gateways: {
+    paystack: { enabled: boolean; recurring: boolean; currencies: string[] };
+    flutterwave: { enabled: boolean; recurring: boolean };
+  };
+  intervals: BillingInterval[];
+  audiences: SubscriptionAudience[];
+  mode: "live" | "simulate";
+};
+
+export type SubscriptionCheckout = {
+  message: string;
+  checkoutUrl: string;
+  reference: string;
+  subscriptionId: string;
+  gateway: SubscriptionGateway;
+  currency: string;
+  amount: number;
+  interval: BillingInterval;
+  audience: SubscriptionAudience;
+};
 
 export const subscriptionApi = {
   foundingStatus: () => api.get<FoundingStatus>("/subscriptions/founding-status"),
-  plans: (state?: string) => api.get<{ currency: string; plans: Array<{ id: string; name: string; tier: string; features: string[]; priceMonthly: number; priceYearly: number }> }>(`/subscriptions/plans${state ? `?state=${encodeURIComponent(state)}` : ""}`),
-  mine: () => api.get<{ subscription: MySubscription }>("/subscriptions/mine"),
-  subscribe: (payload: { planId: string; interval: "monthly" | "yearly"; gateway: "paystack" | "flutterwave" }) =>
-    api.post<{ message: string; subscription: unknown }>("/subscriptions/subscribe", payload),
+
+  plans: (state?: string) =>
+    api.get<{ currency: string; intervals: BillingInterval[]; plans: SubscriptionPlan[] }>(
+      `/subscriptions/plans${state ? `?state=${encodeURIComponent(state)}` : ""}`
+    ),
+
+  capabilities: () => api.get<BillingCapabilities>("/subscriptions/capabilities"),
+
+  mine: () =>
+    api.get<{ subscriptions: MySubscription[]; subscription: MySubscription | null }>("/subscriptions/mine"),
+
+  history: () => api.get<{ payments: SubscriptionPayment[] }>("/subscriptions/history"),
+
+  subscribe: (payload: {
+    planId: string;
+    interval: BillingInterval;
+    gateway: SubscriptionGateway;
+    audience: SubscriptionAudience;
+    consent: true;
+  }) => api.post<SubscriptionCheckout>("/subscriptions/subscribe", payload),
+
+  verify: (reference: string, transactionId?: string) =>
+    api.get<{ status: "success" | "pending"; payment?: SubscriptionPayment; subscription?: MySubscription }>(
+      `/subscriptions/verify/${encodeURIComponent(reference)}${transactionId ? `?transaction_id=${encodeURIComponent(transactionId)}` : ""}`
+    ),
+
+  cancel: (id: string) =>
+    api.post<{ message: string; subscription: MySubscription }>(`/subscriptions/${encodeURIComponent(id)}/cancel`),
+
+  retry: (id: string) =>
+    api.post<{ message: string }>(`/subscriptions/${encodeURIComponent(id)}/retry`),
 };
+
 
 // --- Help Center & Contact (public support system) ---
 export type Category = { id: string; label: string; description: string; count: number };
