@@ -59,7 +59,7 @@ function formatPrice(value: unknown, currency: string): string {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;
-  if ( typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
+  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
     return error.message;
   }
 
@@ -223,7 +223,7 @@ export default function Pricing() {
       return;
     }
     if (!consent) {
-      setErrorMessage( "Please confirm the recurring billing authorization before continuing.",);
+      setErrorMessage("Please confirm the recurring billing authorization before continuing.",);
       return;
     }
     if (!canCheckout) {
@@ -466,8 +466,11 @@ export default function Pricing() {
 
 
         <div className="mb-10 flex flex-col items-center gap-3">
-          <label className="text-sm font-semibold text-slate-700">
-            Choose your payment method
+          <label className="relative block text-center font-semibold text-slate-700">
+            <span className="block">Choose your payment method</span>
+            <span className="mt-1 block text-xs font-normal text-slate-400">
+              Flutterwave is currently working now.
+            </span>
           </label>
 
           <div className="relative w-full max-w-sm">
