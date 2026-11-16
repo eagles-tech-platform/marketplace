@@ -162,13 +162,18 @@ async function getDashboardSummary(req, res) {
     // revenue (slot fees, recommendation fees, badge fees) — not the gross
     // amount customers paid, which mostly goes to providers.
     const { PLATFORM_FEE_PERCENT } = require("../config/paymentConfig");
-    let totalRevenue = 0;
+    let totalRevenue = 0; // Legacy dashboard headline remains NGN-only.
+    const totalRevenueByCurrency = {};
     for (const p of successfulPayments) {
+      let revenue = 0;
       if (p.purpose === "booking_payment") {
-        totalRevenue += Math.round((p.amount * PLATFORM_FEE_PERCENT) / 100);
+        revenue = Math.round((p.amount * PLATFORM_FEE_PERCENT) / 100);
       } else if (p.purpose !== "withdrawal") {
-        totalRevenue += p.amount;
+        revenue = p.amount;
       }
+      const currency = String(p.currency || "NGN").toUpperCase();
+      totalRevenueByCurrency[currency] = (totalRevenueByCurrency[currency] || 0) + revenue;
+      if (currency === "NGN") totalRevenue += revenue;
     }
 
     const recentActivity = [
@@ -178,7 +183,7 @@ async function getDashboardSummary(req, res) {
         link: "/admin/approvals",
       })),
       ...recentPayments.map((p) => ({
-        text: `Payment of ₦${p.amount.toLocaleString()} received (${p.purpose.replace(/_/g, " ")})`,
+        text: `Payment of ${new Intl.NumberFormat("en", { style: "currency", currency: p.currency || "NGN" }).format(p.amount)} received (${p.purpose.replace(/_/g, " ")})`,
         date: p.createdAt,
         link: "/admin/payments",
       })),
@@ -197,6 +202,7 @@ async function getDashboardSummary(req, res) {
       totalProviders,
       totalAdmins,
       totalRevenue,
+      totalRevenueByCurrency,
       pendingApprovalsCount,
       activeBookingsCount,
       recentActivity,
@@ -219,31 +225,40 @@ async function listPayments(req, res) {
       .sort({ createdAt: -1 })
       .limit(200);
 
-    let totalRevenue = 0; // platform's actual earnings
-    let totalPayouts = 0; // what providers actually received (booking payments minus the fee)
-    let pendingPayouts = 0; // pending manual withdrawal requests
-    let totalFees = 0; // the fee portion specifically, broken out from totalRevenue for clarity
+    const summaryByCurrency = {};
+    const bucket = (currency) => {
+      const key = String(currency || "NGN").toUpperCase();
+      if (!summaryByCurrency[key]) summaryByCurrency[key] = {
+        totalRevenue: 0, totalPayouts: 0, pendingPayouts: 0, totalFees: 0,
+      };
+      return summaryByCurrency[key];
+    };
 
     const allSuccessful = await Payment.find({ status: "success" });
     for (const p of allSuccessful) {
+      const totals = bucket(p.currency);
       if (p.purpose === "booking_payment") {
         const fee = Math.round((p.amount * PLATFORM_FEE_PERCENT) / 100);
-        totalFees += fee;
-        totalRevenue += fee;
-        totalPayouts += p.amount - fee;
+        totals.totalFees += fee;
+        totals.totalRevenue += fee;
+        totals.totalPayouts += p.amount - fee;
       } else if (p.purpose === "withdrawal") {
-        totalPayouts += p.amount;
+        totals.totalPayouts += p.amount;
       } else {
-        totalRevenue += p.amount; // slot fees, recommendation fees, badge fees — 100% platform revenue
+        totals.totalRevenue += p.amount;
       }
     }
     const pendingWithdrawals = await Payment.find({ purpose: "withdrawal", status: "pending" });
-    pendingPayouts = pendingWithdrawals.reduce((sum, p) => sum + p.amount, 0);
+    for (const withdrawal of pendingWithdrawals) {
+      bucket(withdrawal.currency).pendingPayouts += withdrawal.amount;
+    }
 
-    return res.json({
-      payments,
-      summary: { totalRevenue, totalPayouts, pendingPayouts, totalFees },
-    });
+    // Keep the legacy summary as NGN-only; never mix NGN and USD totals.
+    const summary = summaryByCurrency.NGN || {
+      totalRevenue: 0, totalPayouts: 0, pendingPayouts: 0, totalFees: 0,
+    };
+
+    return res.json({ payments, summary, summaryByCurrency });
   } catch (err) {
     console.error("[admin] listPayments error:", err);
     return res.status(500).json({ message: "Could not fetch payments." });

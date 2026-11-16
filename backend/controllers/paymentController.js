@@ -10,7 +10,7 @@ const { PLATFORM_FEE_PERCENT, CALLBACK_BASE_URL, isLive } = require("../config/p
 const paystack = require("../services/paystack");
 const flutterwave = require("../services/flutterwave");
 const { notify } = require("../utils/notify");
-const { handlePaystackChargeSuccess, handleFlutterwaveWebhook } = require("./subscriptionController");
+const { handlePaystackChargeSuccess, handlePaystackChargeFailure, handleFlutterwaveWebhook } = require("./subscriptionController");
 
 // ---------- helpers ----------
 
@@ -142,10 +142,16 @@ async function applyPaymentSuccess(payment) {
  * amount and currency. Returns { ok: true } or { ok: false, reason, final }.
  * final=true means it can never become valid (e.g. underpaid).
  */
-async function confirmWithGateway(payment) {
+async function confirmWithGateway(payment, { callbackCancelled = false } = {}) {
   if (payment.provider === "paystack") {
     const tx = await paystack.verifyTransaction(payment.reference);
-    if (tx.status !== "success") return { ok: false, reason: `gateway status: ${tx.status}`, final: false };
+    if (tx.status !== "success") {
+      const status = String(tx.status || "").toLowerCase();
+      if (status === "not_found" && callbackCancelled) return { ok: false, reason: "gateway has no transaction for cancelled checkout", final: true, paymentStatus: "not_paid" };
+      if (["abandoned", "cancelled", "canceled"].includes(status)) return { ok: false, reason: `gateway status: ${status}`, final: true, paymentStatus: "not_paid" };
+      if (["failed", "reversed", "declined", "rejected"].includes(status)) return { ok: false, reason: `gateway status: ${status}`, final: true, paymentStatus: "failed" };
+      return { ok: false, reason: `gateway status: ${status || "pending"}`, final: false };
+    }
     if (tx.reference !== payment.reference) return { ok: false, reason: "reference mismatch", final: true };
     if (String(tx.currency || "").toUpperCase() !== String(payment.currency || "NGN").toUpperCase()) return { ok: false, reason: "missing or wrong currency", final: true };
     const expectedKobo = Math.round(payment.amount * 100);
@@ -157,7 +163,13 @@ async function confirmWithGateway(payment) {
 
   if (payment.provider === "flutterwave") {
     const tx = await flutterwave.verifyByReference(payment.reference);
-    if (tx.status !== "successful") return { ok: false, reason: `gateway status: ${tx.status}`, final: false };
+    if (!["successful", "succeeded"].includes(String(tx.status || "").toLowerCase())) {
+      const status = String(tx.status || "").toLowerCase();
+      if (status === "not_found" && callbackCancelled) return { ok: false, reason: "gateway has no transaction for cancelled checkout", final: true, paymentStatus: "not_paid" };
+      if (["cancelled", "canceled", "abandoned"].includes(status)) return { ok: false, reason: `gateway status: ${status}`, final: true, paymentStatus: "not_paid" };
+      if (["failed", "declined", "rejected", "error"].includes(status)) return { ok: false, reason: `gateway status: ${status}`, final: true, paymentStatus: "failed" };
+      return { ok: false, reason: `gateway status: ${status || "pending"}`, final: false };
+    }
     if (tx.tx_ref !== payment.reference) return { ok: false, reason: "reference mismatch", final: true };
     if (String(tx.currency || "").toUpperCase() !== String(payment.currency || "NGN").toUpperCase()) return { ok: false, reason: "missing or wrong currency", final: true };
     const receivedMinor = Math.round(Number(tx.amount) * 100);
@@ -172,11 +184,11 @@ async function confirmWithGateway(payment) {
 }
 
 /** Shared by both webhooks and the verify endpoint. */
-async function settlePayment(payment) {
+async function settlePayment(payment, options = {}) {
   if (payment.purpose === "withdrawal") return { ok: false, reason: "not a gateway payment", final: false };
   if (payment.status === "success") return { ok: true };
 
-  const result = await confirmWithGateway(payment);
+  const result = await confirmWithGateway(payment, options);
   if (result.ok) {
     await applyPaymentSuccess(payment);
     return { ok: true };
@@ -185,7 +197,7 @@ async function settlePayment(payment) {
     console.error(`[payments] ${payment.reference} rejected: ${result.reason}`);
     await Payment.updateOne(
       { _id: payment._id, status: "pending" },
-      { status: "failed", "meta.verifyFailure": result.reason }
+      { status: result.paymentStatus || "failed", "meta.verifyFailure": result.reason }
     );
   }
   return result;
@@ -345,16 +357,20 @@ async function verifyPayment(req, res) {
       return res.status(403).json({ message: "This isn't your payment." });
     }
 
-    if (payment.status === "success" || !isLive()) {
+    if (payment.status === "success" || payment.status === "not_paid" || !isLive()) {
       return res.json({ payment });
     }
 
-    // Double-check with the real gateway rather than trusting the redirect alone
-    const result = await settlePayment(payment);
+    const callbackStatus = String(req.query.status || "").toLowerCase();
+
+    // A redirect status is only a hint. Verify with the gateway before recording
+    // a cancellation so a delayed success webhook cannot be hidden by the URL.
+    const result = await settlePayment(payment, {
+      callbackCancelled: ["cancelled", "canceled"].includes(callbackStatus),
+    });
     const refreshed = await Payment.findById(payment._id);
-    if (!result.ok && result.final) {
-      return res.status(400).json({ message: "Payment could not be verified.", payment: refreshed });
-    }
+    // Return the authoritative terminal status in a normal response so the
+    // callback UI can distinguish failed/not-paid from an unresolved request.
     return res.json({ payment: refreshed });
   } catch (err) {
     console.error("[payments] verifyPayment error:", err);
@@ -375,8 +391,10 @@ async function paystackWebhook(req, res) {
       return res.status(401).json({ message: "Invalid signature." });
     }
     const event = req.body;
-    if (event?.event === "charge.success" && typeof event.data?.reference === "string") {
-      const handledAsSubscription = await handlePaystackChargeSuccess(event.data.reference);
+    if (["charge.success", "charge.failed"].includes(event?.event) && typeof event.data?.reference === "string") {
+      const handledAsSubscription = event.event === "charge.success"
+        ? await handlePaystackChargeSuccess(event.data.reference)
+        : await handlePaystackChargeFailure(event.data.reference);
       if (!handledAsSubscription) {
         const payment = await Payment.findOne({ reference: event.data.reference });
         if (payment) await settlePayment(payment);
@@ -699,12 +717,45 @@ async function decideWithdrawal(req, res) {
   }
 }
 
+
+// GET /api/payments/mine — authenticated user's payment history (never exposes gateway metadata).
+async function getMyPayments(req, res) {
+  try {
+    const records = await Payment.find({
+      user: req.user._id,
+      purpose: { $ne: "withdrawal" },
+    })
+      .populate({ path: "booking", populate: { path: "service", select: "title" } })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    const payments = records.map((payment) => ({
+      _id: String(payment._id),
+      purpose: payment.purpose,
+      provider: payment.provider,
+      amount: payment.amount,
+      currency: payment.currency || "NGN",
+      status: payment.status,
+      reference: payment.reference || "",
+      serviceTitle: payment.booking?.service?.title || "",
+      createdAt: payment.createdAt,
+    }));
+
+    return res.json({ payments });
+  } catch (err) {
+    console.error("[payments] getMyPayments error:", err);
+    return res.status(500).json({ message: "Could not fetch your payment history." });
+  }
+}
+
 module.exports = {
   initializePayment,
   verifyPayment,
   paystackWebhook,
   flutterwaveWebhook,
   getBanks,
+  getMyPayments,
   addPayoutAccount,
   getMyEarnings,
   requestWithdrawal,

@@ -1,48 +1,94 @@
 import { io, type Socket } from "socket.io-client";
-import { API_BASE_URL, getAccessToken, onAccessTokenChange, refreshAccessToken } from "@/lib/api";
+import {
+  API_BASE_URL,
+  getAccessToken,
+  onAccessTokenChange,
+  refreshAccessToken,
+} from "@/lib/api";
 
-// The backend serves Socket.io on the same origin/port as the REST API —
-// strip the "/api" suffix to get the base server URL.
-const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, "");
+const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
 
 let socket: Socket | null = null;
 let unsubscribeToken: (() => void) | null = null;
+let refreshInFlight: Promise<void> | null = null;
 
-/** Gets a fresh token, then reconnects. Gives up (stays disconnected) if the session is gone. */
-async function reconnectWithFreshToken(s: Socket) {
-  const token = await refreshAccessToken();
-  if (token && socket === s) s.connect();
+async function reconnectWithFreshToken(current: Socket) {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const token = await refreshAccessToken();
+    if (!token || socket !== current) {
+      current.disconnect();
+      return;
+    }
+
+    // Socket.IO calls the auth callback on the next connection attempt.
+    current.disconnect();
+    current.connect();
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
 }
 
-/** Returns a shared socket authenticated with the in-memory access token. */
+/**
+ * One shared Socket.IO connection. The API's current authentication contract
+ * is a short-lived Bearer access token in the handshake, refreshed through the
+ * HttpOnly refresh cookie. Do not switch this to cookie-only auth unless the
+ * backend socket middleware is migrated at the same time.
+ */
 export function getSocket(): Socket {
+  if (!SOCKET_URL) throw new Error("Socket.IO server URL is not configured.");
+
   if (!socket) {
-    const s = io(SOCKET_URL, {
+    const current = io(SOCKET_URL, {
       withCredentials: true,
       autoConnect: true,
-      // Evaluated on every (re)connect, so it always sends the newest token.
-      auth: (cb) => cb({ token: getAccessToken() }),
+      auth: (callback) => callback({ token: getAccessToken() }),
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      transports: ["websocket", "polling"],
     });
-    socket = s;
 
-    // Hand each refreshed token to the live connection so it never expires mid-chat.
+    socket = current;
+
     unsubscribeToken = onAccessTokenChange((token) => {
-      if (!token) return disconnectSocket(); // logged out or session lost
-      if (s.connected) s.emit("update_token", token);
+      if (!token) {
+        disconnectSocket();
+        return;
+      }
+      if (current.connected) current.emit("update_token", token);
     });
 
-    s.on("token_expired", () => void reconnectWithFreshToken(s));
-    s.on("connect_error", (err) => {
-      if (err.message === "ACCESS_TOKEN_EXPIRED") void reconnectWithFreshToken(s);
+    current.on("token_expired", () => {
+      void reconnectWithFreshToken(current);
     });
-    // session_invalid: the account was signed out or deactivated — stay disconnected.
+
+    current.on("connect_error", (error) => {
+      if (error.message === "ACCESS_TOKEN_EXPIRED") {
+        void reconnectWithFreshToken(current);
+      }
+    });
+
+    current.on("session_invalid", () => {
+      current.disconnect();
+    });
   }
+
   return socket;
 }
 
-export function disconnectSocket() {
+export function disconnectSocket(): void {
   unsubscribeToken?.();
   unsubscribeToken = null;
-  socket?.disconnect();
-  socket = null;
+
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
 }

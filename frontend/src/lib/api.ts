@@ -220,8 +220,7 @@ export type PlatformStats = {
 };
 
 export const metaApi = {
-  locations: () =>
-    api.get<{ nigerianStates: string[]; internationalCountries: string[] }>("/meta/locations"),
+  locations: () => api.get<{ nigerianStates: string[]; internationalCountries: string[] }>("/meta/locations"),
   categories: () => api.get<{ categories: Array<{ name: string; slug: string; niches: { name: string; slug: string }[] }> }>("/meta/categories"),
   stats: () => api.get<PlatformStats>("/meta/stats"),
 };
@@ -299,13 +298,7 @@ export const notificationApi = {
 };
 
 // --- Provider verification (video call + portfolio badge) ---
-export type VerificationStatus =
-  | "submitted"
-  | "call_scheduled"
-  | "call_completed"
-  | "awaiting_payment"
-  | "approved"
-  | "rejected";
+export type VerificationStatus = "submitted" | "call_scheduled" | "call_completed" | "awaiting_payment" | "approved" | "rejected";
 
 export type VerificationRequestItem = {
   _id: string;
@@ -363,6 +356,20 @@ export type PaymentItem = {
 export type Bank = { name: string; code: string };
 
 export const paymentApi = {
+  mine: () =>
+    api.get<{
+      payments: Array<{
+        _id: string;
+        purpose: string;
+        provider: string;
+        amount: number;
+        currency: string;
+        status: "pending" | "success" | "failed" | "refunded";
+        reference: string;
+        serviceTitle: string;
+        createdAt: string;
+      }>;
+    }>("/payments/mine"),
   initialize: (payload: { purpose: PaymentPurpose; gateway: PaymentGateway; bookingId?: string; recommendationRequestId?: string }) =>
     api.post<{ message: string; simulated?: boolean; checkoutUrl?: string; reference?: string; payment: PaymentItem }>(
       "/payments/initialize",
@@ -621,9 +628,8 @@ export type SubscriptionPlan = {
   role: "provider" | "customer" | "both";
   features: string[];
   prices: {
-    monthly: number | null;
-    quarterly: number | null;
-    annual: number | null;
+    NGN: Record<BillingInterval, number | null>;
+    USD: Record<BillingInterval, number | null>;
   };
 };
 
@@ -689,7 +695,7 @@ export const subscriptionApi = {
   foundingStatus: () => api.get<FoundingStatus>("/subscriptions/founding-status"),
 
   plans: (state?: string) =>
-    api.get<{ currency: string; intervals: BillingInterval[]; plans: SubscriptionPlan[] }>(
+    api.get<{ currency: "NGN" | "USD"; intervals: BillingInterval[]; plans: SubscriptionPlan[] }>(
       `/subscriptions/plans${state ? `?state=${encodeURIComponent(state)}` : ""}`
     ),
 

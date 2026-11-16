@@ -4,15 +4,18 @@ const Subscription = require("../models/Subscription");
 const Payment = require("../models/Payment");
 const { claimNextSlot, getStatus: getFoundingStatus } = require("../models/FoundingMemberCounter");
 const { currencyForState } = require("../utils/currency");
+const { getSubscriptionPrice, getPricesForTier, getConfiguredCurrencies } = require("../config/subscriptionPricing");
 const { isLive } = require("../config/paymentConfig");
 const { notify } = require("../utils/notify");
 const { encryptSecret } = require("../utils/subscriptionCrypto");
 const paystack = require("../services/paystack");
 const flutterwave = require("../services/flutterwave");
 
+// Prices are deliberately not hardcoded here. Backend environment variables are
+// the single source of truth for NGN and USD subscription amounts.
 const DEFAULT_PLANS = [
-  { name: "Basic", tier: "basic", role: "both", priceNgnMonthly: 1500, priceNgnQuarterly: 4500, priceNgnYearly: 15000, priceUsdMonthly: 3, priceUsdQuarterly: 9, priceUsdYearly: 30, features: ["List up to 5 active services", "Standard placement in search results", "Email support"] },
-  { name: "Pro", tier: "pro", role: "both", priceNgnMonthly: 4000, priceNgnQuarterly: 12000, priceNgnYearly: 40000, priceUsdMonthly: 8, priceUsdQuarterly: 24, priceUsdYearly: 80, features: ["Unlimited active services", "Priority placement in search & recommendations", "Verified badge fee discount", "Priority support"] },
+  { name: "Basic", tier: "basic", role: "both", priceNgnMonthly: 0, priceNgnQuarterly: 0, priceNgnYearly: 0, priceUsdMonthly: 0, priceUsdQuarterly: 0, priceUsdYearly: 0, features: ["List up to 5 active services", "Standard placement in search results", "Email support"] },
+  { name: "Pro", tier: "pro", role: "both", priceNgnMonthly: 0, priceNgnQuarterly: 0, priceNgnYearly: 0, priceUsdMonthly: 0, priceUsdQuarterly: 0, priceUsdYearly: 0, features: ["Unlimited active services", "Priority placement in search & recommendations", "Verified badge fee discount", "Priority support"] },
 ];
 
 const INTERVALS = {
@@ -44,10 +47,8 @@ function addMonthsClamped(from, months) {
 }
 
 function priceFor(plan, currency, interval) {
-  const suffix = currency === "NGN" ? "Ngn" : "Usd";
-  const period = interval === "annual" ? "Yearly" : interval === "quarterly" ? "Quarterly" : "Monthly";
-  const value = Number(plan[`price${suffix}${period}`]);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  // Ignore old/stale database prices: checkout always uses backend env.
+  return getSubscriptionPrice(plan.tier, currency, interval);
 }
 
 function planCacheKey(currency, interval) { return `${currency}_${interval}`; }
@@ -67,15 +68,14 @@ async function getFlutterwavePlan(plan, currency, interval, amount) {
   return { id: String(created.id), amount, currency, interval };
 }
 
-
 async function getBillingCapabilities(req, res) {
   const paystackEnabled = isLive() && !!process.env.PAYSTACK_SECRET_KEY && !!process.env.SUBSCRIPTION_TOKEN_ENCRYPTION_KEY;
   const flutterwaveEnabled = isLive() && !!process.env.FLUTTERWAVE_SECRET_KEY;
   return res.json({
     recurringEnabled: paystackEnabled || flutterwaveEnabled,
     gateways: {
-      paystack: { enabled: paystackEnabled, recurring: true, currencies: (process.env.PAYSTACK_RECURRING_CURRENCIES || "NGN").split(",").map((v) => v.trim()).filter(Boolean) },
-      flutterwave: { enabled: flutterwaveEnabled, recurring: true },
+      paystack: { enabled: paystackEnabled, recurring: true, currencies: getConfiguredCurrencies("paystack") },
+      flutterwave: { enabled: flutterwaveEnabled, recurring: true, currencies: getConfiguredCurrencies("flutterwave") },
     },
     intervals: ["monthly", "quarterly", "annual"],
     audiences: ["customer", "provider"],
@@ -87,14 +87,10 @@ async function getPlans(req, res) {
   try {
     await ensurePlansExist();
     const plans = await SubscriptionPlan.find({ isActive: true }).sort({ priceNgnMonthly: 1 });
-    const currency = currencyForState(req.query.state);
-    return res.json({ currency, intervals: Object.keys(INTERVALS), plans: plans.map((p) => ({
+    const preferredCurrency = currencyForState(req.query.state);
+    return res.json({ currency: preferredCurrency, preferredCurrency, currencies: ["NGN", "USD"], intervals: Object.keys(INTERVALS), plans: plans.map((p) => ({
       id: p._id, name: p.name, tier: p.tier, role: p.role, features: p.features,
-      prices: {
-        monthly: priceFor(p, currency, "monthly"),
-        quarterly: priceFor(p, currency, "quarterly"),
-        annual: priceFor(p, currency, "annual"),
-      },
+      prices: getPricesForTier(p.tier),
     })) });
   } catch (err) {
     console.error("[subscriptions] getPlans:", err.message);
@@ -142,9 +138,9 @@ async function enrollNewUser(user) {
 
 async function subscribe(req, res) {
   try {
-    const { planId, interval, gateway, audience = "customer", consent } = req.body || {};
-    if (!planId || !["monthly", "quarterly", "annual"].includes(interval) || !["paystack", "flutterwave"].includes(gateway) || !["customer", "provider"].includes(audience)) {
-      return res.status(400).json({ message: "Provide planId, interval (monthly/quarterly/annual), gateway and audience (customer/provider)." });
+    const { planId, interval, gateway, currency, audience = "customer", consent } = req.body || {};
+    if (!planId || !["monthly", "quarterly", "annual"].includes(interval) || !["paystack", "flutterwave"].includes(gateway) || !["customer", "provider"].includes(audience) || !["NGN", "USD"].includes(currency)) {
+      return res.status(400).json({ message: "Provide planId, interval, gateway, currency (NGN/USD) and audience (customer/provider)." });
     }
     if (consent !== true) return res.status(400).json({ message: "You must explicitly authorize recurring billing before continuing." });
     if (audience === "provider" && !req.user.canBeProvider) return res.status(403).json({ message: "Only provider-enabled accounts can buy provider membership." });
@@ -152,11 +148,10 @@ async function subscribe(req, res) {
 
     const plan = await SubscriptionPlan.findById(planId);
     if (!plan || !plan.isActive || (plan.role !== "both" && plan.role !== audience)) return res.status(404).json({ message: "Plan is unavailable for this account type." });
-    const currency = currencyForState(req.user.state);
     const amount = priceFor(plan, currency, interval);
-    if (!amount) return res.status(400).json({ message: `This plan has no configured ${currency} ${interval} price.` });
-    if (gateway === "paystack" && currency !== "NGN" && process.env.PAYSTACK_RECURRING_CURRENCIES?.split(",").map((v) => v.trim()).includes(currency) !== true) {
-      return res.status(400).json({ message: "Paystack recurring billing is not enabled for this currency on this deployment. Choose Flutterwave or NGN." });
+    if (!amount) return res.status(400).json({ message: `This plan has no configured ${currency} ${interval} price. Configure SUBSCRIPTION_${plan.tier.toUpperCase()}_${currency}_${interval.toUpperCase()} in the backend environment.` });
+    if (!getConfiguredCurrencies(gateway).includes(currency)) {
+      return res.status(400).json({ message: `${gateway} recurring billing is not enabled for ${currency} on this deployment.` });
     }
     if (!isLive()) {
       return res.status(409).json({ message: "Recurring subscriptions are disabled in simulate mode. Use gateway test credentials and PAYMENTS_MODE=live in a staging environment." });
@@ -213,7 +208,21 @@ async function activateFromVerifiedPayment(payment, verified, gateway) {
   const statusOk = gateway === "paystack" ? verified.status === "success" : ["successful", "succeeded"].includes(verified.status);
   const referenceOk = gateway === "paystack" ? verified.reference === payment.reference : verified.tx_ref === payment.reference;
   if (!statusOk || !referenceOk || actualAmount !== expectedAmount || actualCurrency !== payment.currency) {
-    throw new Error("Gateway transaction did not exactly match expected status, reference, amount and currency.");
+    const reason = "Gateway transaction did not exactly match expected status, reference, amount and currency.";
+    await Payment.updateOne(
+      { _id: payment._id, status: { $ne: "success" } },
+      { $set: { status: "failed", "meta.verifyFailure": reason, "meta.verifiedAt": new Date() } }
+    );
+    const pendingSubscription = payment.meta?.subscriptionId
+      ? await Subscription.findOne({ _id: payment.meta.subscriptionId, status: "pending" })
+      : null;
+    if (pendingSubscription) {
+      pendingSubscription.status = "not_paid";
+      pendingSubscription.autoRenew = false;
+      pendingSubscription.lastFailureCode = "payment_verification_mismatch";
+      await pendingSubscription.save();
+    }
+    throw new Error(reason);
   }
 
   const subId = payment.meta?.subscriptionId;
@@ -267,19 +276,86 @@ async function verifySubscriptionPayment(req, res) {
   try {
     const payment = await Payment.findOne({ reference: req.params.reference, user: req.user._id, purpose: { $in: ["subscription_initial", "subscription_renewal"] } });
     if (!payment) return res.status(404).json({ message: "Subscription payment not found." });
-    if (payment.status === "success") return res.json({ status: "success", payment });
-    let verified;
-    if (payment.provider === "paystack") verified = await paystack.verifyTransaction(payment.reference);
-    else {
-      const transactionId = req.query.transaction_id;
-      if (!transactionId) return res.json({ status: "pending", payment });
-      verified = await flutterwave.verifyById(transactionId);
+    if (payment.status === "success") {
+      const subscription = await Subscription.findById(payment.meta?.subscriptionId);
+      return res.json({ status: "success", payment, subscription });
     }
-    const subscription = await activateFromVerifiedPayment(payment, verified, payment.provider);
-    return res.json({ status: "success", payment: await Payment.findById(payment._id), subscription });
+
+    const callbackStatus = String(req.query.status || "").toLowerCase();
+    const callbackCancelled = ["cancelled", "canceled"].includes(callbackStatus);
+
+    let verified;
+    if (payment.provider === "paystack") {
+      verified = await paystack.verifyTransaction(payment.reference);
+    } else {
+      const transactionId = req.query.transaction_id;
+      verified = transactionId
+        ? await flutterwave.verifyById(transactionId)
+        : await flutterwave.verifyByReference(payment.reference);
+    }
+
+    const gatewayStatus = String(verified.status || "").toLowerCase();
+    if (gatewayStatus === "not_found" && callbackCancelled) {
+      await Payment.updateOne({ _id: payment._id, status: "pending" }, {
+        $set: { status: "not_paid", "meta.cancelledAt": new Date(), "meta.gatewayCallbackStatus": callbackStatus },
+      });
+      const subscription = await Subscription.findOne({ _id: payment.meta?.subscriptionId, status: "pending" });
+      if (subscription) {
+        subscription.status = "not_paid";
+        subscription.autoRenew = false;
+        subscription.cancelledAt = new Date();
+        subscription.lastFailureCode = "checkout_cancelled";
+        await subscription.save();
+      }
+      return res.json({ status: "not_paid", payment: await Payment.findById(payment._id), subscription });
+    }
+    const isSuccessful = payment.provider === "paystack"
+      ? gatewayStatus === "success"
+      : ["successful", "succeeded"].includes(gatewayStatus);
+
+    if (isSuccessful) {
+      const subscription = await activateFromVerifiedPayment(payment, verified, payment.provider);
+      return res.json({ status: "success", payment: await Payment.findById(payment._id), subscription });
+    }
+
+    if (["cancelled", "canceled", "abandoned"].includes(gatewayStatus)) {
+      await Payment.updateOne({ _id: payment._id, status: "pending" }, {
+        $set: { status: "not_paid", "meta.gatewayStatus": gatewayStatus, "meta.verifiedAt": new Date() },
+      });
+      const subscription = await Subscription.findOne({ _id: payment.meta?.subscriptionId, status: "pending" });
+      if (subscription) {
+        subscription.status = "not_paid";
+        subscription.autoRenew = false;
+        subscription.cancelledAt = new Date();
+        subscription.lastFailureCode = "checkout_cancelled";
+        await subscription.save();
+      }
+      return res.json({ status: "not_paid", payment: await Payment.findById(payment._id), subscription });
+    }
+
+    if (["failed", "declined", "rejected", "error"].includes(gatewayStatus)) {
+      await Payment.updateOne({ _id: payment._id, status: "pending" }, {
+        $set: { status: "failed", "meta.gatewayStatus": gatewayStatus, "meta.verifiedAt": new Date() },
+      });
+      const subscription = await Subscription.findOne({ _id: payment.meta?.subscriptionId, status: "pending" });
+      if (subscription) {
+        subscription.status = "not_paid";
+        subscription.autoRenew = false;
+        subscription.lastFailureCode = gatewayStatus;
+        await subscription.save();
+      }
+      return res.json({ status: "failed", payment: await Payment.findById(payment._id), subscription });
+    }
+
+    return res.json({ status: "pending", payment: await Payment.findById(payment._id) });
   } catch (err) {
     console.error("[subscriptions] verify:", err.message);
-    return res.status(400).json({ message: "Payment has not been verified as successful yet." });
+    const refreshedPayment = await Payment.findOne({ reference: req.params.reference, user: req.user._id });
+    if (refreshedPayment?.status === "failed") {
+      const subscription = await Subscription.findById(refreshedPayment.meta?.subscriptionId);
+      return res.json({ status: "failed", payment: refreshedPayment, subscription });
+    }
+    return res.status(502).json({ message: "Could not verify the payment status with the gateway. It remains pending until verification succeeds." });
   }
 }
 
@@ -288,6 +364,39 @@ async function handlePaystackChargeSuccess(reference) {
   if (!payment) return false;
   const verified = await paystack.verifyTransaction(reference);
   await activateFromVerifiedPayment(payment, verified, "paystack");
+  return true;
+}
+
+async function handlePaystackChargeFailure(reference) {
+  const payment = await Payment.findOne({ reference, purpose: { $in: ["subscription_initial", "subscription_renewal"] } });
+  if (!payment || payment.status !== "pending") return Boolean(payment);
+  const verified = await paystack.verifyTransaction(reference);
+  const status = String(verified.status || "").toLowerCase();
+  if (status === "success") {
+    await activateFromVerifiedPayment(payment, verified, "paystack");
+    return true;
+  }
+  if (["abandoned", "cancelled", "canceled"].includes(status)) {
+    await Payment.updateOne({ _id: payment._id, status: "pending" }, { $set: { status: "not_paid", "meta.gatewayStatus": status, "meta.verifiedAt": new Date() } });
+  } else if (["failed", "reversed", "declined", "rejected"].includes(status)) {
+    await Payment.updateOne({ _id: payment._id, status: "pending" }, { $set: { status: "failed", "meta.gatewayStatus": status, "meta.verifiedAt": new Date() } });
+  } else {
+    return true; // Still pending at the gateway.
+  }
+
+  const subscription = await Subscription.findById(payment.meta?.subscriptionId);
+  if (subscription && payment.purpose === "subscription_initial" && subscription.status === "pending") {
+    subscription.status = "not_paid";
+    subscription.autoRenew = false;
+    subscription.cancelledAt = ["abandoned", "cancelled", "canceled"].includes(status) ? new Date() : subscription.cancelledAt;
+    subscription.lastFailureCode = status || "payment_failed";
+    await subscription.save();
+  } else if (subscription && payment.purpose === "subscription_renewal" && ["active", "past_due"].includes(subscription.status)) {
+    subscription.status = "past_due";
+    subscription.retryCount = Number(subscription.retryCount || 0) + 1;
+    subscription.lastFailureCode = status || "renewal_failed";
+    await subscription.save();
+  }
   return true;
 }
 
@@ -324,12 +433,22 @@ async function handleFlutterwaveWebhook(payload) {
   if (["successful", "succeeded"].includes(verified.status)) {
     await activateFromVerifiedPayment(payment, verified, "flutterwave");
   } else if (payment.status === "pending") {
-    await Payment.updateOne({ _id: payment._id }, { status: "failed", "meta.failure": verified.status || "unsuccessful" });
+    const gatewayStatus = String(verified.status || "unsuccessful").toLowerCase();
+    const wasCancelled = ["cancelled", "canceled", "abandoned"].includes(gatewayStatus);
+    await Payment.updateOne({ _id: payment._id, status: "pending" }, {
+      $set: { status: wasCancelled ? "not_paid" : "failed", "meta.failure": gatewayStatus, "meta.verifiedAt": new Date() },
+    });
     const sub = await Subscription.findById(payment.meta?.subscriptionId);
-    if (sub && ["active", "past_due"].includes(sub.status)) {
+    if (sub && payment.purpose === "subscription_initial" && sub.status === "pending") {
+      sub.status = "not_paid";
+      sub.autoRenew = false;
+      sub.cancelledAt = wasCancelled ? new Date() : sub.cancelledAt;
+      sub.lastFailureCode = gatewayStatus;
+      await sub.save();
+    } else if (sub && ["active", "past_due"].includes(sub.status)) {
       sub.status = "past_due";
       sub.retryCount = Number(sub.retryCount || 0) + 1;
-      sub.lastFailureCode = String(verified.status || "charge_failed");
+      sub.lastFailureCode = gatewayStatus;
       await sub.save();
       if (sub.retryCount === 1 || sub.retryCount >= 3) await notify({ userId: sub.user, type: "payment", title: "Subscription payment needs attention", message: "Flutterwave could not complete your recurring charge. It may retry automatically; please check your card or bank balance.", link: "/dashboard/settings" });
     }
@@ -400,4 +519,4 @@ async function adminCancelSubscription(req, res) {
   } catch (err) { return res.status(500).json({ message: "Could not cancel subscription." }); }
 }
 
-module.exports = { getBillingCapabilities, getPlans, getFoundingMemberStatus, getMySubscription, getMyHistory, enrollNewUser, subscribe, verifySubscriptionPayment, handlePaystackChargeSuccess, handleFlutterwaveWebhook, cancelMySubscription, requestRetry, adminListSubscriptions, adminCancelSubscription, activateFromVerifiedPayment };
+module.exports = { getBillingCapabilities, getPlans, getFoundingMemberStatus, getMySubscription, getMyHistory, enrollNewUser, subscribe, verifySubscriptionPayment, handlePaystackChargeSuccess, handlePaystackChargeFailure, handleFlutterwaveWebhook, cancelMySubscription, requestRetry, adminListSubscriptions, adminCancelSubscription, activateFromVerifiedPayment };

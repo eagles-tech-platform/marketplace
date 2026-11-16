@@ -6,6 +6,7 @@ import { adminApi, ApiError } from "@/lib/api";
 const statusStyles: Record<string, string> = {
   success: "bg-green-100 text-green-700",
   pending: "bg-yellow-100 text-yellow-700",
+  not_paid: "bg-slate-100 text-slate-600",
   failed: "bg-red-100 text-red-700",
   refunded: "bg-slate-100 text-slate-600",
 };
@@ -13,6 +14,7 @@ const statusStyles: Record<string, string> = {
 export default function AdminPayments() {
   const [payments, setPayments] = useState<Awaited<ReturnType<typeof adminApi.payments>>["payments"]>([]);
   const [summary, setSummary] = useState({ totalRevenue: 0, totalPayouts: 0, pendingPayouts: 0, totalFees: 0 });
+  const [summaryByCurrency, setSummaryByCurrency] = useState<Record<string, { totalRevenue: number; totalPayouts: number; pendingPayouts: number; totalFees: number }>>({});
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -22,16 +24,17 @@ export default function AdminPayments() {
       .then((res) => {
         setPayments(res.payments);
         setSummary(res.summary);
+        setSummaryByCurrency(res.summaryByCurrency || { NGN: res.summary });
       })
       .catch((err) => setErrorMessage(err instanceof ApiError ? err.message : "Could not load payments."))
       .finally(() => setLoading(false));
   }, []);
 
   const stats = [
-    { label: "Platform Revenue", value: `₦${(summary.totalRevenue / 1000).toFixed(0)}K`, icon: CreditCard, color: "bg-green-50 text-green-600" },
-    { label: "Provider Payouts", value: `₦${(summary.totalPayouts / 1000).toFixed(0)}K`, icon: ArrowUpRight, color: "bg-blue-50 text-blue-600" },
-    { label: "Pending Withdrawals", value: `₦${(summary.pendingPayouts / 1000).toFixed(0)}K`, icon: Clock, color: "bg-amber-50 text-amber-600" },
-    { label: "Fees Collected", value: `₦${(summary.totalFees / 1000).toFixed(0)}K`, icon: ArrowDownLeft, color: "bg-purple-50 text-purple-600" },
+    { label: "Platform Revenue (NGN)", value: `₦${(summary.totalRevenue / 1000).toFixed(0)}K`, icon: CreditCard, color: "bg-green-50 text-green-600" },
+    { label: "Provider Payouts (NGN)", value: `₦${(summary.totalPayouts / 1000).toFixed(0)}K`, icon: ArrowUpRight, color: "bg-blue-50 text-blue-600" },
+    { label: "Pending Withdrawals (NGN)", value: `₦${(summary.pendingPayouts / 1000).toFixed(0)}K`, icon: Clock, color: "bg-amber-50 text-amber-600" },
+    { label: "Fees Collected (NGN)", value: `₦${(summary.totalFees / 1000).toFixed(0)}K`, icon: ArrowDownLeft, color: "bg-purple-50 text-purple-600" },
   ];
 
   return (
@@ -51,6 +54,18 @@ export default function AdminPayments() {
           </div>
         ))}
       </div>
+
+      {Object.entries(summaryByCurrency).filter(([currency]) => currency !== "NGN").map(([currency, totals]) => (
+        <div key={currency} className="mb-6 rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold text-slate-800">{currency} payment summary</h2>
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <p className="text-slate-600">Platform revenue: <strong className="text-slate-900">{new Intl.NumberFormat(undefined, { style: "currency", currency }).format(totals.totalRevenue)}</strong></p>
+            <p className="text-slate-600">Provider payouts: <strong className="text-slate-900">{new Intl.NumberFormat(undefined, { style: "currency", currency }).format(totals.totalPayouts)}</strong></p>
+            <p className="text-slate-600">Pending withdrawals: <strong className="text-slate-900">{new Intl.NumberFormat(undefined, { style: "currency", currency }).format(totals.pendingPayouts)}</strong></p>
+            <p className="text-slate-600">Fees collected: <strong className="text-slate-900">{new Intl.NumberFormat(undefined, { style: "currency", currency }).format(totals.totalFees)}</strong></p>
+          </div>
+        </div>
+      ))}
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {loading ? (
@@ -74,13 +89,15 @@ export default function AdminPayments() {
                     <td className="px-6 py-4 text-sm text-slate-600">{p.user?.name || "Unknown"}</td>
                     <td className="px-6 py-4 text-sm text-slate-600 capitalize">{p.purpose.replace(/_/g, " ")}</td>
                     <td className="px-6 py-4 text-sm text-slate-600 capitalize">{p.provider.replace(/_/g, " ")}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-slate-700 text-right">₦{p.amount.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-700 text-right">
+                      {new Intl.NumberFormat(undefined, { style: "currency", currency: p.currency || "NGN", maximumFractionDigits: 2 }).format(p.amount)}
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${statusStyles[p.status]}`}>
                         {p.status === "success" && <CheckCircle2 className="w-3 h-3" />}
                         {p.status === "pending" && <Clock className="w-3 h-3" />}
-                        {p.status === "failed" && <XCircle className="w-3 h-3" />}
-                        {p.status}
+                        {(p.status === "failed" || p.status === "not_paid") && <XCircle className="w-3 h-3" />}
+                        {p.status === "not_paid" ? "Not paid" : p.status === "success" ? "Successful" : p.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500">{new Date(p.createdAt).toLocaleDateString()}</td>

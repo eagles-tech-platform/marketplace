@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Search, Send, Paperclip, MessageSquare, Loader2 } from "lucide-react";
+import { Search, Send, Paperclip, MessageSquare, Loader2, ChevronLeft, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import DashboardLayout from "@/components/auth/DashboardLayout";
@@ -27,6 +27,8 @@ export default function ProviderChat() {
 
   const [messageInput, setMessageInput] = useState("");
   const [roomSearch, setRoomSearch] = useState("");
+  const [showConversations, setShowConversations] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
@@ -53,7 +55,7 @@ export default function ProviderChat() {
   }, [messages]);
 
   useEffect(() => {
-    if (targetRoomId && rooms.some((r) => r._id === targetRoomId)) selectRoom(targetRoomId);
+    if (targetRoomId && rooms.some((r) => r._id === targetRoomId)) { selectRoom(targetRoomId); setShowConversations(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetRoomId, rooms]);
 
@@ -78,11 +80,11 @@ export default function ProviderChat() {
 
   return (
     <DashboardLayout role="provider" title="Chat with Customers">
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden" style={{ height: "calc(100vh - 180px)" }}>
-        <div className="grid lg:grid-cols-3 h-full">
+      <div className="h-[calc(100dvh-9rem)] min-h-[26rem] max-h-[calc(100dvh-6rem)] overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <div className={`grid h-full min-h-0 grid-cols-1 ${sidebarCollapsed ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(16rem,0.34fr)_minmax(0,1fr)]"}`}>
           {/* Conversation List */}
-          <div className="border-r border-slate-100 flex flex-col">
-            <div className="p-4 border-b border-slate-100">
+          <div className={`${showConversations ? "flex" : "hidden"} ${sidebarCollapsed ? "lg:hidden" : "lg:flex"} min-h-0 flex-col border-r border-slate-100`}>
+            <div className="border-b border-slate-100 p-3 sm:p-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input
@@ -107,7 +109,7 @@ export default function ProviderChat() {
                   return (
                     <button
                       key={room._id}
-                      onClick={() => selectRoom(room._id)}
+                      onClick={() => { selectRoom(room._id); setShowConversations(false); }}
                       className={`w-full flex items-start gap-3 p-4 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 ${
                         selectedRoomId === room._id ? "bg-teal-50 border-l-4 border-l-teal-500" : "border-l-4 border-l-transparent"
                       }`}
@@ -135,7 +137,7 @@ export default function ProviderChat() {
           </div>
 
           {/* Chat Area */}
-          <div className="lg:col-span-2 flex flex-col h-full">
+          <div className={`${showConversations ? "hidden" : "flex"} lg:flex min-w-0 min-h-0 flex-col h-full`}>
             {!selectedRoomId ? (
               <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
                 Select a conversation to start chatting
@@ -143,7 +145,23 @@ export default function ProviderChat() {
             ) : (
               <>
                 <div className="flex items-center justify-between p-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowConversations(true)}
+                      aria-label="Back to conversations"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 lg:hidden"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+                      aria-label={sidebarCollapsed ? "Show conversation list" : "Collapse conversation list"}
+                      className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 lg:inline-flex"
+                    >
+                      {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+                    </button>
                     <img src={otherParticipant?.avatar || "/avatar-customer-1.jpg"} alt="" className="w-10 h-10 rounded-full object-cover" />
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{otherParticipant?.name || "Customer"}</p>
@@ -158,7 +176,7 @@ export default function ProviderChat() {
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3 sm:p-4">
                   {loadingMessages ? (
                     <p className="text-sm text-slate-400">Loading messages...</p>
                   ) : messages.length === 0 ? (
@@ -168,7 +186,7 @@ export default function ProviderChat() {
                       const isMe = msg.sender === currentUserId;
                       return (
                         <div key={msg._id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
+                          <div className={`max-w-[85%] sm:max-w-[70%] rounded-2xl px-4 py-2.5 ${
                             isMe ? "bg-gradient-to-r from-teal-500 to-teal-600 text-white rounded-br-md" : "bg-slate-100 text-slate-700 rounded-bl-md"
                           }`}>
                             {msg.content && <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>}
@@ -194,7 +212,7 @@ export default function ProviderChat() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-4 border-t border-slate-100">
+                <div className="shrink-0 border-t border-slate-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4">
                   <div className="flex items-center gap-2">
                     <button
                       title="Attach a file"

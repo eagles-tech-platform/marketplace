@@ -7,6 +7,7 @@ const {
   paystackWebhook,
   flutterwaveWebhook,
   getBanks,
+  getMyPayments,
   addPayoutAccount,
   getMyEarnings,
   requestWithdrawal,
@@ -36,6 +37,7 @@ router.post("/webhook/flutterwave", flutterwaveWebhook);
 router.post("/initialize", payLimiter, protect, initializePayment);
 router.get("/verify/:reference", protect, verifyPayment);
 router.get("/banks", protect, getBanks);
+router.get("/mine", protect, getMyPayments);
 router.get("/earnings", protect, getMyEarnings);
 router.post("/payout-account", payLimiter, protect, addPayoutAccount);
 

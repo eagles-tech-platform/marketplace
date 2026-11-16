@@ -73,3 +73,38 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Responsive application foundations: prevent page-level horizontal overflow
+   and use the dynamic viewport on modern mobile browsers and Capacitor WebViews. */
+@layer base {
+  html {
+    min-width: 320px;
+    min-height: 100%;
+    width: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body, #root {
+    min-height: 100%;
+    width: 100%;
+    min-width: 320px;
+  }
+
+  body {
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+  }
+
+  button, a, input, textarea, select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input, textarea, select {
+    max-width: 100%;
+  }
+
+  img, video, canvas, svg {
+    max-width: 100%;
+  }
+}

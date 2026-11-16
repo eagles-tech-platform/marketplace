@@ -81,7 +81,7 @@ function getPlanId(plan: SubscriptionPlan): string {
 export default function Pricing() {
   const { user, isAuthenticated } = useAuth();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [currency, setCurrency] = useState("NGN");
+  const [currency, setCurrency] = useState<"NGN" | "USD">("NGN");
   const [interval, setInterval] = useState<BillingInterval>("monthly");
   const [audience, setAudience] = useState<SubscriptionAudience>("customer");
   const [gateway, setGateway] = useState<SubscriptionGateway>("paystack");
@@ -92,6 +92,7 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [managing, setManaging] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -119,7 +120,7 @@ export default function Pricing() {
   const recurringEnabled = Boolean(capabilities?.recurringEnabled && capabilities.mode === "live",);
   const selectedGateway = capabilities?.gateways?.[gateway];
   const gatewayEnabled = Boolean(selectedGateway?.enabled);
-  const gatewayCurrencyAllowed = gateway === "flutterwave" || Boolean(capabilities?.gateways?.paystack?.currencies?.includes(currency),);
+  const gatewayCurrencyAllowed = Boolean(selectedGateway?.currencies?.includes(currency));
   const canCheckout = recurringEnabled && gatewayEnabled && gatewayCurrencyAllowed;
   const eligiblePlans = plans.filter((plan) => plan.role === "both" || plan.role === audience,);
 
@@ -164,7 +165,7 @@ export default function Pricing() {
         if (!alive) return;
 
         setPlans(planRes.plans ?? []);
-        setCurrency(planRes.currency || "NGN");
+        setCurrency(planRes.preferredCurrency === "USD" ? "USD" : "NGN");
         setFoundingStatus(foundingRes);
         setCapabilities(capabilityRes);
 
@@ -185,16 +186,10 @@ export default function Pricing() {
             ),
           );
         }
-      } finally {
-        if (alive) setLoading(false);
-      }
+      } finally { if (alive) setLoading(false); }
     }
-
     void loadPricingData();
-
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [user?.state, isAuthenticated]);
 
   const refreshSubscriptionData = async () => {
@@ -242,6 +237,7 @@ export default function Pricing() {
         planId,
         interval,
         gateway,
+        currency,
         audience,
         consent: true,
       });
@@ -263,12 +259,9 @@ export default function Pricing() {
   };
 
   const handleCancel = async (subscription: MySubscription) => {
-    if (!subscription?._id) return;
-    const confirmed = window.confirm(
-      "Cancel automatic renewal for this subscription? Your paid access may remain active until the current period ends.",
-    );
-    if (!confirmed) return;
+    if (!subscription?._id || managing) return;
     setManaging(subscription._id);
+    setConfirmingCancel(null);
     setErrorMessage(null);
     setNoticeMessage(null);
 
@@ -284,6 +277,7 @@ export default function Pricing() {
       );
     } finally {
       setManaging(null);
+      setConfirmingCancel(null);
     }
   };
 
@@ -310,45 +304,16 @@ export default function Pricing() {
   };
 
   const getPriceForPlan = (plan: SubscriptionPlan): number | null => {
-    const candidate = plan as SubscriptionPlan & {
-      prices?: Partial<Record<BillingInterval, number | string | null>>;
-      priceNgnMonthly?: number;
-      priceNgnQuarterly?: number;
-      priceNgnYearly?: number;
-      priceUsdMonthly?: number;
-      priceUsdQuarterly?: number;
-      priceUsdYearly?: number;
-    };
-
-    const normalized = candidate.prices?.[interval];
-    if (normalized !== undefined && normalized !== null && normalized !== "") {
-      const amount = Number(normalized);
-      return Number.isFinite(amount) && amount > 0 ? amount : null;
-    }
-
-    const suffix =
-      interval === "monthly"
-        ? "Monthly"
-        : interval === "quarterly"
-          ? "Quarterly"
-          : "Yearly";
-
-    const key = `${currency === "USD" ? "priceUsd" : "priceNgn"}${suffix}` as
-      | "priceNgnMonthly"
-      | "priceNgnQuarterly"
-      | "priceNgnYearly"
-      | "priceUsdMonthly"
-      | "priceUsdQuarterly"
-      | "priceUsdYearly";
-
-    const amount = Number(candidate[key]);
-    return Number.isFinite(amount) && amount > 0 ? amount : null;
+    const amount = plan.prices?.[currency]?.[interval];
+    return typeof amount === "number" && Number.isFinite(amount) && amount > 0
+      ? amount
+      : null;
   };
 
   const gatewayMessage = !gatewayEnabled
     ? `${gateway === "paystack" ? "Paystack" : "Flutterwave"} recurring billing is not enabled.`
     : !gatewayCurrencyAllowed
-      ? `Paystack recurring billing is not enabled for ${currency}.`
+      ? `${gateway === "paystack" ? "Paystack" : "Flutterwave"} recurring billing is not enabled for ${currency}.`
       : "You will complete payment on the selected provider's secure checkout page.";
 
   return (
@@ -359,7 +324,7 @@ export default function Pricing() {
             Simple, transparent pricing
           </h1>
           <p className="text-white/80">
-            Plans and prices are based on your account location.
+            Choose your billing currency. All prices are supplied by our secure billing server.
           </p>
         </div>
       </section>
@@ -464,6 +429,34 @@ export default function Pricing() {
         </div>
 
 
+
+        <div className="mb-8 flex flex-col items-center gap-2">
+          <p className="text-sm font-semibold text-slate-700">Choose your billing currency</p>
+          <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+            {(["NGN", "USD"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setCurrency(value);
+                  setConsent(false);
+                  setErrorMessage(null);
+                }}
+                aria-pressed={currency === value}
+                className={`rounded-full px-6 py-2 text-sm font-semibold transition-colors ${
+                  currency === value
+                    ? "bg-teal-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {value === "NGN" ? "₦ NGN" : "$ USD"}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">
+            The selected currency is used for the subscription charge and billing history.
+          </p>
+        </div>
 
         <div className="mb-10 flex flex-col items-center gap-3">
           <label className="relative block text-center font-semibold text-slate-700">
@@ -777,17 +770,53 @@ export default function Pricing() {
 
             {["active", "past_due", "pending"].includes(mySub.status) && (
               <div className="mt-5">
-                <Button
-                  onClick={() => void handleCancel(mySub)}
-                  disabled={managing === mySub._id}
-                  variant="outline"
-                  className="rounded-xl"
-                >
-                  <XCircle className="mr-2 h-4 w-4" />
-                  {managing === mySub._id
-                    ? "Processing..."
-                    : "Cancel renewal"}
-                </Button>
+                {confirmingCancel === mySub._id ? (
+                  <div
+                    className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"
+                    role="alert"
+                    aria-live="polite"
+                  >
+                    <p className="text-sm font-medium text-amber-900">
+                      Cancel automatic renewal?
+                    </p>
+                    <p className="mt-1 text-sm text-amber-800">
+                      Your paid access may remain active until the current
+                      billing period ends.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => void handleCancel(mySub)}
+                        disabled={managing === mySub._id}
+                        className="rounded-xl"
+                      >
+                        {managing === mySub._id
+                          ? "Processing..."
+                          : "Yes, cancel renewal"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setConfirmingCancel(null)}
+                        disabled={managing === mySub._id}
+                        className="rounded-xl"
+                      >
+                        Keep subscription
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => setConfirmingCancel(mySub._id)}
+                    disabled={Boolean(managing)}
+                    variant="outline"
+                    className="rounded-xl"
+                  >
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Cancel renewal
+                  </Button>
+                )}
                 {mySub.gateway === "flutterwave" && (
                   <p className="mt-2 text-xs text-slate-500">
                     If direct cancellation is not supported by the gateway,
@@ -834,7 +863,7 @@ export default function Pricing() {
                       {formatPrice(payment.amount, payment.currency)}
                     </p>
                     <p className="text-xs capitalize text-slate-500">
-                      {payment.status}
+                      {statusLabel(payment.status)}
                     </p>
                   </div>
                 </div>
