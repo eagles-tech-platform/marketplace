@@ -39,7 +39,7 @@ export default function AdminSettings() {
             <ProfileTab
               title="Admin Profile"
               fallbackAvatar="/avatar-provider-1.jpg"
-              editable={true}
+              editable={false}
               header={
                 <>
                   <p className="font-medium text-slate-800">{user?.name}</p>
@@ -49,7 +49,7 @@ export default function AdminSettings() {
               }
               footer={
                 <p className="text-xs text-slate-400">
-                  Your administrator role and permissions are managed by the server and cannot be changed from this profile.
+                  There's only ever one admin account by design — created once via the bootstrap script, never through the app itself.
                 </p>
               }
             />

@@ -51,6 +51,7 @@ const LINKS: Record<Role, { label: string; icon: React.ElementType; path: string
     { label: "Chat", icon: MessageSquare, path: "/dashboard/chat" },
     { label: "Cart", icon: ShoppingCart, path: "/dashboard/cart" },
     { label: "Blog", icon: PenLine, path: "/dashboard/blog" },
+    { label: "Support Centre", icon: LifeBuoy, path: "/dashboard/support" },
     { label: "Settings", icon: Settings, path: "/dashboard/settings" },
   ],
   provider: [
@@ -60,6 +61,7 @@ const LINKS: Record<Role, { label: string; icon: React.ElementType; path: string
     { label: "Chat", icon: MessageSquare, path: "/provider/chat" },
     { label: "Earnings", icon: DollarSign, path: "/provider/earnings" },
     { label: "Blog", icon: PenLine, path: "/provider/blog" },
+    { label: "Support Centre", icon: LifeBuoy, path: "/provider/support" },
     { label: "Settings", icon: Settings, path: "/provider/settings" },
   ],
   admin: [

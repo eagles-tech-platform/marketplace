@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Link } from "react-router";
 import {
   User,
   Shield,
@@ -13,7 +14,6 @@ import DashboardLayout from "@/components/auth/DashboardLayout";
 import ProfileTab from "@/components/auth/Profiletab"
 import SecurityTab from "@/components/auth/Securitytab";
 import { jobCategories } from "@/data/categories";
-import { feedbackApi, paymentApi, ApiError, type FeedbackItem } from "@/lib/api";
 
 const tabs = [
   { id: "profile", label: "Profile", icon: User },
@@ -39,33 +39,7 @@ export default function CustomerSettings() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const [feedbackType, setFeedbackType] = useState("General Feedback");
-  const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [myFeedback, setMyFeedback] = useState<FeedbackItem[]>([]);
 
-  useEffect(() => {
-    feedbackApi.mine().then((res) => setMyFeedback(res.feedback)).catch(() => setMyFeedback([]));
-  }, []);
-
-  const handleSendFeedback = async () => {
-    if (!feedbackMessage.trim()) {
-      setFeedbackError("Please write a message first.");
-      return;
-    }
-    setFeedbackSubmitting(true);
-    setFeedbackError(null);
-    try {
-      const res = await feedbackApi.create({ subject: feedbackType, message: feedbackMessage.trim() });
-      setMyFeedback((prev) => [res.feedback, ...prev]);
-      setFeedbackMessage("");
-    } catch (err) {
-      setFeedbackError(err instanceof ApiError ? err.message : "Could not send feedback.");
-    } finally {
-      setFeedbackSubmitting(false);
-    }
-  };
 
   return (
     <DashboardLayout role="customer" title="Settings">
@@ -114,8 +88,48 @@ export default function CustomerSettings() {
 
           {activeTab === "security" && <SecurityTab />}
 
-          {/* Payments — gateway-hosted checkout; card details are never stored by this app. */}
-          {activeTab === "payment" && <CustomerPaymentHistory />}
+          {/* Payment (still sample data) */}
+          {activeTab === "payment" && (
+            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-6">
+              <h3 className="text-lg font-semibold text-slate-800">Payment Methods</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-800">**** **** **** 4532</p>
+                      <p className="text-xs text-slate-500">Expires 09/27</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-medium bg-teal-100 text-teal-700 px-2 py-1 rounded-full">Default</span>
+                </div>
+                <Button variant="outline" className="w-full rounded-xl border-dashed border-2 py-6">
+                  + Add New Payment Method
+                </Button>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                <h4 className="font-medium text-slate-800 mb-3">Payment History</h4>
+                <div className="space-y-2">
+                  {[
+                    { service: "Plumbing Repair", amount: 5000, date: "Jan 12, 2026", status: "Success" },
+                    { service: "Home Cleaning", amount: 15000, date: "Jan 8, 2026", status: "Success" },
+                    { service: "AC Repair", amount: 12000, date: "Jan 5, 2026", status: "Success" },
+                  ].map((p, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{p.service}</p>
+                        <p className="text-xs text-slate-400">{p.date}</p>
+                      </div>
+                      <span className="text-sm font-semibold text-slate-700">N{p.amount.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Become a Provider */}
           {activeTab === "provider" && (
@@ -204,137 +218,23 @@ export default function CustomerSettings() {
             </div>
           )}
 
-          {/* Feedback */}
+          {/* Feedback is managed in the dedicated Support Centre. */}
           {activeTab === "feedback" && (
-            <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
-              <h3 className="text-lg font-semibold text-slate-800">Send Feedback</h3>
-              {feedbackError && <p className="text-sm text-red-600">{feedbackError}</p>}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Feedback Type</label>
-                <select value={feedbackType} onChange={(e) => setFeedbackType(e.target.value)} className="w-full h-11 rounded-xl border border-slate-200 px-3 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-200 outline-none">
-                  <option>General Feedback</option>
-                  <option>Bug Report</option>
-                  <option>Feature Request</option>
-                  <option>Complaint</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Message</label>
-                <textarea
-                  value={feedbackMessage}
-                  onChange={(e) => setFeedbackMessage(e.target.value)}
-                  placeholder="Tell us what you think..."
-                  rows={4}
-                  className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:border-teal-500 focus:ring-1 focus:ring-teal-200 outline-none resize-none"
-                />
-              </div>
-              <Button onClick={handleSendFeedback} disabled={feedbackSubmitting} className="bg-gradient-to-r from-teal-500 to-orange-500 text-white rounded-xl">
-                {feedbackSubmitting ? "Sending..." : "Send Feedback"}
-              </Button>
-
-              <div className="pt-4 border-t border-slate-100">
-                <h4 className="font-medium text-slate-800 mb-3">Previous Feedback</h4>
-                {myFeedback.length === 0 ? (
-                  <p className="text-sm text-slate-400">No feedback sent yet.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {myFeedback.map((item) => (
-                      <div key={item._id} className="p-3 bg-slate-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-slate-700">{item.subject}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                            item.status === "closed" ? "text-green-600 bg-green-100" :
-                            item.status === "replied" ? "text-blue-600 bg-blue-100" : "text-yellow-600 bg-yellow-100"
-                          }`}>
-                            {item.status}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-500">{item.message}</p>
-                        {item.adminReply && (
-                          <p className="text-xs text-teal-700 mt-2 pl-2 border-l-2 border-teal-200">{item.adminReply}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                  <MessageSquare className="h-5 w-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-semibold text-slate-800">Customer Support Centre</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">Submit feedback, report bugs, raise account or payment concerns, and track replies from the Marketplace team in one place.</p>
+                  <Link to="/dashboard/support" className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800">Open Support Centre</Link>
+                </div>
               </div>
             </div>
           )}
         </div>
       </div>
     </DashboardLayout>
-  );
-}
-
-function CustomerPaymentHistory() {
-  const [payments, setPayments] = useState<Awaited<ReturnType<typeof paymentApi.mine>>["payments"]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    paymentApi.mine()
-      .then((result) => setPayments(result.payments))
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load payment history."))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <section className="min-w-0 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6 space-y-5">
-      <div>
-        <h3 className="text-lg font-semibold text-slate-800">Payments</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Payments are securely completed through the available payment gateway. Marketplace does not store your full card details.
-        </p>
-      </div>
-
-      <div className="rounded-xl border border-teal-100 bg-teal-50 p-4">
-        <div className="flex items-start gap-3">
-          <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-teal-700" />
-          <div>
-            <p className="text-sm font-medium text-teal-900">Secure checkout</p>
-            <p className="mt-1 text-xs text-teal-800">
-              Choose Paystack or Flutterwave when you pay for a booking or another Marketplace service. Your gateway handles card and bank authorization.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h4 className="font-medium text-slate-800">Payment history</h4>
-        {loading ? (
-          <p className="py-6 text-sm text-slate-400">Loading payments…</p>
-        ) : error ? (
-          <p className="py-6 text-sm text-red-600">{error}</p>
-        ) : payments.length === 0 ? (
-          <p className="py-6 text-sm text-slate-400">No payments recorded yet.</p>
-        ) : (
-          <div className="mt-3 divide-y divide-slate-100">
-            {payments.map((payment) => (
-              <div key={payment._id} className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">
-                    {payment.serviceTitle || payment.purpose.replace(/_/g, " ")}
-                  </p>
-                  <p className="mt-1 break-all text-xs text-slate-400">
-                    {payment.provider.toUpperCase()} · {new Date(payment.createdAt).toLocaleString()}
-                    {payment.reference ? ` · ${payment.reference}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
-                  <span className="text-sm font-semibold text-slate-800">
-                    {payment.currency === "NGN" ? "₦" : `${payment.currency} `}{payment.amount.toLocaleString()}
-                  </span>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                    payment.status === "success" ? "bg-emerald-50 text-emerald-700" :
-                    payment.status === "pending" ? "bg-amber-50 text-amber-700" :
-                    "bg-rose-50 text-rose-700"
-                  }`}>{payment.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
   );
 }

@@ -37,6 +37,7 @@ import CustomerChat from "./pages/dashboard/CustomerChat";
 import CustomerCart from "./pages/dashboard/CustomerCart";
 import CustomerSettings from "./pages/dashboard/CustomerSettings";
 import CustomerBlog from "./pages/dashboard/CustomerBlog";
+import SupportCenter from "./pages/SupportCenter";
 
 // Provider Pages
 import ProviderDashboard from "./pages/provider/ProviderDashboard";
@@ -106,6 +107,7 @@ export default function App() {
             <Route path="/dashboard/chat" element={<CustomerChat />} />
             <Route path="/dashboard/cart" element={<CustomerCart />} />
             <Route path="/dashboard/settings" element={<CustomerSettings />} />
+            <Route path="/dashboard/support" element={<SupportCenter role="customer" />} />
             <Route path="/dashboard/blog" element={<CustomerBlog />} />
           </Route>
 
@@ -117,6 +119,7 @@ export default function App() {
             <Route path="/provider/chat" element={<ProviderChat />} />
             <Route path="/provider/earnings" element={<ProviderEarnings />} />
             <Route path="/provider/settings" element={<ProviderSettings />} />
+            <Route path="/provider/support" element={<SupportCenter role="provider" />} />
             <Route path="/provider/blog" element={<ProviderBlog />} />
           </Route>
 

@@ -356,20 +356,6 @@ export type PaymentItem = {
 export type Bank = { name: string; code: string };
 
 export const paymentApi = {
-  mine: () =>
-    api.get<{
-      payments: Array<{
-        _id: string;
-        purpose: string;
-        provider: string;
-        amount: number;
-        currency: string;
-        status: "pending" | "success" | "failed" | "refunded";
-        reference: string;
-        serviceTitle: string;
-        createdAt: string;
-      }>;
-    }>("/payments/mine"),
   initialize: (payload: { purpose: PaymentPurpose; gateway: PaymentGateway; bookingId?: string; recommendationRequestId?: string }) =>
     api.post<{ message: string; simulated?: boolean; checkoutUrl?: string; reference?: string; payment: PaymentItem }>(
       "/payments/initialize",
@@ -514,9 +500,14 @@ export const adminApi = {
 };
 
 // --- Feedback ---
+export type FeedbackRole = "customer" | "provider" | "admin";
+export type FeedbackCategory = "general" | "bug" | "feature" | "account" | "payment" | "safety" | "other";
+
 export type FeedbackItem = {
   _id: string;
-  user: string | { _id: string; name: string; email: string; avatar?: string };
+  user: string | { _id: string; name: string; email: string; avatar?: string; activeRole?: FeedbackRole };
+  userRole: FeedbackRole;
+  category: FeedbackCategory;
   subject: string;
   message: string;
   status: "open" | "replied" | "closed";
@@ -525,10 +516,17 @@ export type FeedbackItem = {
 };
 
 export const feedbackApi = {
-  create: (payload: { subject: string; message: string }) =>
+  create: (payload: { subject: string; message: string; category?: FeedbackCategory }) =>
     api.post<{ message: string; feedback: FeedbackItem }>("/feedback", payload),
   mine: () => api.get<{ feedback: FeedbackItem[] }>("/feedback/mine"),
-  list: (status?: string) => api.get<{ feedback: FeedbackItem[] }>(`/feedback${status ? `?status=${status}` : ""}`),
+  list: (filters?: { status?: string; role?: string; category?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status && filters.status !== "all") params.set("status", filters.status);
+    if (filters?.role && filters.role !== "all") params.set("role", filters.role);
+    if (filters?.category && filters.category !== "all") params.set("category", filters.category);
+    const query = params.toString();
+    return api.get<{ feedback: FeedbackItem[] }>(`/feedback${query ? `?${query}` : ""}`);
+  },
   reply: (id: string, reply: string) => api.patch<{ message: string; feedback: FeedbackItem }>(`/feedback/${id}/reply`, { reply }),
   close: (id: string) => api.patch<{ message: string; feedback: FeedbackItem }>(`/feedback/${id}/close`),
 };
